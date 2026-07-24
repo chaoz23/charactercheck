@@ -35,6 +35,7 @@ def main(argv=None):
     ap.add_argument("--full", action="store_true", help="qa: print all 100 rows")
     ap.add_argument("--pipe", action="store_true", help="read refs from stdin, one per line")
     ap.add_argument("--schema", action="store_true", help="print the I/O contract and exit")
+    ap.add_argument("--version", action="version", version="charactercheck 0.1.1")
     a = ap.parse_args(argv)
 
     if a.schema:
