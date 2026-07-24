@@ -1,0 +1,8 @@
+charactercheck
+
+Independent implementation. Schema semantics for the D&D Beyond
+character-service v5 payload were partly informed by reading the source of
+MrPrimate/ddb-importer (MIT, Copyright (c) 2019 Sebastian Will, (c) 2020 Jack
+Holloway) — no code was copied. The 100-question QA schema was authored by the
+project owner. D&D Beyond is a trademark of Wizards of the Coast; this project
+is unofficial and unaffiliated, and reads only publicly shared character sheets.

@@ -1,0 +1,665 @@
+{
+ "data": {
+  "username": "fixture-bot",
+  "overrideStats": [
+   {
+    "id": 1,
+    "value": null
+   },
+   {
+    "id": 2,
+    "value": null
+   },
+   {
+    "id": 3,
+    "value": null
+   },
+   {
+    "id": 4,
+    "value": null
+   },
+   {
+    "id": 5,
+    "value": null
+   },
+   {
+    "id": 6,
+    "value": null
+   }
+  ],
+  "bonusStats": [
+   {
+    "id": 1,
+    "value": null
+   },
+   {
+    "id": 2,
+    "value": null
+   },
+   {
+    "id": 3,
+    "value": null
+   },
+   {
+    "id": 4,
+    "value": null
+   },
+   {
+    "id": 5,
+    "value": null
+   },
+   {
+    "id": 6,
+    "value": null
+   }
+  ],
+  "bonusHitPoints": null,
+  "overrideHitPoints": null,
+  "removedHitPoints": 0,
+  "temporaryHitPoints": 0,
+  "inspiration": false,
+  "alignmentId": 2,
+  "currentXp": 900,
+  "age": 30,
+  "height": "5'10\"",
+  "weight": 170,
+  "hair": "brown",
+  "skin": "tan",
+  "eyes": "grey",
+  "deathSaves": {
+   "successCount": null,
+   "failCount": null
+  },
+  "conditions": [],
+  "customItems": [
+   {
+    "name": "Lucky Charm",
+    "weight": 2,
+    "quantity": 1
+   }
+  ],
+  "spells": {
+   "class": [
+    {
+     "definition": {
+      "name": "Eldritch Blast",
+      "level": 0
+     }
+    },
+    {
+     "definition": {
+      "name": "Hex",
+      "level": 1
+     },
+     "prepared": true
+    }
+   ],
+   "race": [],
+   "item": [],
+   "feat": []
+  },
+  "notes": {
+   "organizations": null
+  },
+  "traits": {
+   "personalityTraits": "steady",
+   "ideals": "duty",
+   "bonds": "the order",
+   "flaws": "stubborn"
+  },
+  "currencies": {
+   "cp": 0,
+   "sp": 10,
+   "ep": 0,
+   "gp": 25,
+   "pp": 0
+  },
+  "preferences": {
+   "hitPointType": 1
+  },
+  "characterValues": [
+   {
+    "typeId": 2,
+    "valueId": null,
+    "value": 1
+   },
+   {
+    "typeId": 8,
+    "valueId": "13",
+    "value": "Night Rapier"
+   },
+   {
+    "typeId": 29,
+    "valueId": "13",
+    "value": "True"
+   },
+   {
+    "typeId": 8,
+    "valueId": "14",
+    "value": "Boot Knife (off hand)"
+   },
+   {
+    "typeId": 8,
+    "valueId": "17",
+    "value": "Chest (Stashed @ Docks)"
+   },
+   {
+    "typeId": 9,
+    "valueId": "17",
+    "value": "under the third pier"
+   }
+  ],
+  "feats": [],
+  "pactMagic": [
+   {
+    "level": 2,
+    "available": 2,
+    "used": 1
+   }
+  ],
+  "classSpells": [],
+  "spellSlots": [],
+  "actions": {
+   "class": [
+    {
+     "name": "Hexing Curse",
+     "limitedUse": {
+      "maxUses": 1,
+      "numberUsed": 0
+     }
+    }
+   ],
+   "race": [],
+   "feat": []
+  },
+  "id": 90000002,
+  "name": "Vexa Thornwake",
+  "stats": [
+   {
+    "id": 1,
+    "value": 10
+   },
+   {
+    "id": 2,
+    "value": 12
+   },
+   {
+    "id": 3,
+    "value": 14
+   },
+   {
+    "id": 4,
+    "value": 10
+   },
+   {
+    "id": 5,
+    "value": 10
+   },
+   {
+    "id": 6,
+    "value": 16
+   }
+  ],
+  "baseHitPoints": 30,
+  "race": {
+   "fullName": "Half-Elf",
+   "sizeId": 4,
+   "weightSpeeds": {
+    "normal": {
+     "walk": 30
+    }
+   },
+   "racialTraits": [
+    {
+     "definition": {
+      "name": "Darkvision"
+     }
+    }
+   ]
+  },
+  "background": {
+   "definition": {
+    "name": "Charlatan"
+   }
+  },
+  "classes": [
+   {
+    "level": 3,
+    "hitDiceUsed": 0,
+    "definition": {
+     "id": 600,
+     "name": "Paladin",
+     "hitDice": 10,
+     "spellCastingAbilityId": null
+    },
+    "subclassDefinition": null,
+    "classFeatures": []
+   },
+   {
+    "level": 4,
+    "hitDiceUsed": 2,
+    "definition": {
+     "id": 700,
+     "name": "Warlock",
+     "hitDice": 8,
+     "spellCastingAbilityId": 6
+    },
+    "subclassDefinition": {
+     "name": "The Hexblade",
+     "classFeatures": []
+    },
+    "classFeatures": [
+     {
+      "definition": {
+       "id": 7001,
+       "name": "Hex Warrior"
+      }
+     }
+    ]
+   }
+  ],
+  "modifiers": {
+   "race": [
+    {
+     "type": "bonus",
+     "subType": "charisma-score",
+     "value": 2,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    },
+    {
+     "type": "language",
+     "subType": "common",
+     "value": null,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": "Common"
+    }
+   ],
+   "class": [
+    {
+     "type": "replace-weapon-ability",
+     "subType": "charisma-score",
+     "value": null,
+     "statId": null,
+     "componentId": 7001,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    },
+    {
+     "type": "proficiency",
+     "subType": "wisdom-saving-throws",
+     "value": null,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    },
+    {
+     "type": "proficiency",
+     "subType": "charisma-saving-throws",
+     "value": null,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    },
+    {
+     "type": "proficiency",
+     "subType": "medium-armor",
+     "value": null,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    },
+    {
+     "type": "proficiency",
+     "subType": "shields",
+     "value": null,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    },
+    {
+     "type": "proficiency",
+     "subType": "martial-weapons",
+     "value": null,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    },
+    {
+     "type": "proficiency",
+     "subType": "arcana",
+     "value": null,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    },
+    {
+     "type": "proficiency",
+     "subType": "persuasion",
+     "value": null,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    }
+   ],
+   "background": [],
+   "feat": [
+    {
+     "type": "bonus",
+     "subType": "initiative",
+     "value": 5,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    },
+    {
+     "type": "bonus",
+     "subType": "hit-points-per-level",
+     "value": 1,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    },
+    {
+     "type": "munch",
+     "subType": "cookies",
+     "value": 1,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    }
+   ],
+   "item": [],
+   "condition": []
+  },
+  "inventory": [
+   {
+    "id": 11,
+    "containerEntityId": 90000002,
+    "equipped": true,
+    "isAttuned": false,
+    "quantity": 1,
+    "definition": {
+     "name": "Breastplate",
+     "armorClass": 14,
+     "armorTypeId": 2,
+     "damage": null,
+     "damageType": null,
+     "attackType": null,
+     "properties": [],
+     "weight": 20,
+     "bundleSize": 1,
+     "magic": false,
+     "canAttune": false,
+     "canEquip": true,
+     "isConsumable": false,
+     "isContainer": false,
+     "grantedModifiers": []
+    }
+   },
+   {
+    "id": 12,
+    "containerEntityId": 90000002,
+    "equipped": false,
+    "isAttuned": false,
+    "quantity": 1,
+    "definition": {
+     "name": "Shield",
+     "armorClass": 2,
+     "armorTypeId": 4,
+     "damage": null,
+     "damageType": null,
+     "attackType": null,
+     "properties": [],
+     "weight": 6,
+     "bundleSize": 1,
+     "magic": false,
+     "canAttune": false,
+     "canEquip": true,
+     "isConsumable": false,
+     "isContainer": false,
+     "grantedModifiers": []
+    }
+   },
+   {
+    "id": 13,
+    "containerEntityId": 90000002,
+    "equipped": true,
+    "isAttuned": false,
+    "quantity": 1,
+    "definition": {
+     "name": "Rapier",
+     "armorClass": null,
+     "armorTypeId": null,
+     "damage": {
+      "diceString": "1d8"
+     },
+     "damageType": "Piercing",
+     "attackType": 1,
+     "properties": [
+      {
+       "name": "Finesse"
+      },
+      {
+       "name": "Vex"
+      }
+     ],
+     "weight": 2,
+     "bundleSize": 1,
+     "magic": false,
+     "canAttune": false,
+     "canEquip": true,
+     "isConsumable": false,
+     "isContainer": false,
+     "grantedModifiers": []
+    }
+   },
+   {
+    "id": 14,
+    "containerEntityId": 90000002,
+    "equipped": true,
+    "isAttuned": false,
+    "quantity": 1,
+    "definition": {
+     "name": "Dagger",
+     "armorClass": null,
+     "armorTypeId": null,
+     "damage": {
+      "diceString": "1d4"
+     },
+     "damageType": "Piercing",
+     "attackType": 1,
+     "properties": [
+      {
+       "name": "Finesse"
+      },
+      {
+       "name": "Light"
+      },
+      {
+       "name": "Nick"
+      }
+     ],
+     "weight": 1,
+     "bundleSize": 1,
+     "magic": false,
+     "canAttune": false,
+     "canEquip": true,
+     "isConsumable": false,
+     "isContainer": false,
+     "grantedModifiers": []
+    }
+   },
+   {
+    "id": 15,
+    "containerEntityId": 90000002,
+    "equipped": true,
+    "isAttuned": false,
+    "quantity": 1,
+    "definition": {
+     "name": "Crossbow, Hand",
+     "armorClass": null,
+     "armorTypeId": null,
+     "damage": {
+      "diceString": "1d6"
+     },
+     "damageType": "Piercing",
+     "attackType": 2,
+     "properties": [
+      {
+       "name": "Loading"
+      },
+      {
+       "name": "Vex"
+      },
+      {
+       "name": "Light"
+      }
+     ],
+     "weight": 3,
+     "bundleSize": 1,
+     "magic": false,
+     "canAttune": false,
+     "canEquip": true,
+     "isConsumable": false,
+     "isContainer": false,
+     "grantedModifiers": []
+    }
+   },
+   {
+    "id": 16,
+    "containerEntityId": 90000002,
+    "equipped": false,
+    "isAttuned": false,
+    "quantity": 20,
+    "definition": {
+     "name": "Crossbow Bolts",
+     "armorClass": null,
+     "armorTypeId": null,
+     "damage": null,
+     "damageType": null,
+     "attackType": null,
+     "properties": [],
+     "weight": 1.5,
+     "bundleSize": 20,
+     "magic": false,
+     "canAttune": false,
+     "canEquip": true,
+     "isConsumable": false,
+     "isContainer": false,
+     "grantedModifiers": []
+    }
+   },
+   {
+    "id": 17,
+    "containerEntityId": 90000002,
+    "equipped": false,
+    "isAttuned": false,
+    "quantity": 1,
+    "definition": {
+     "name": "Chest",
+     "armorClass": null,
+     "armorTypeId": null,
+     "damage": null,
+     "damageType": null,
+     "attackType": null,
+     "properties": [],
+     "weight": 25,
+     "bundleSize": 1,
+     "magic": false,
+     "canAttune": false,
+     "canEquip": true,
+     "isConsumable": false,
+     "isContainer": true,
+     "grantedModifiers": []
+    }
+   },
+   {
+    "id": 18,
+    "containerEntityId": 17,
+    "equipped": false,
+    "isAttuned": false,
+    "quantity": 1,
+    "definition": {
+     "name": "Chain Mail",
+     "armorClass": 16,
+     "armorTypeId": 3,
+     "damage": null,
+     "damageType": null,
+     "attackType": null,
+     "properties": [],
+     "weight": 55,
+     "bundleSize": 1,
+     "magic": false,
+     "canAttune": false,
+     "canEquip": true,
+     "isConsumable": false,
+     "isContainer": false,
+     "grantedModifiers": []
+    }
+   },
+   {
+    "id": 19,
+    "containerEntityId": 90000002,
+    "equipped": true,
+    "isAttuned": false,
+    "quantity": 1,
+    "definition": {
+     "name": "Backpack",
+     "armorClass": null,
+     "armorTypeId": null,
+     "damage": null,
+     "damageType": null,
+     "attackType": null,
+     "properties": [],
+     "weight": 5,
+     "bundleSize": 1,
+     "magic": false,
+     "canAttune": false,
+     "canEquip": true,
+     "isConsumable": false,
+     "isContainer": true,
+     "grantedModifiers": []
+    }
+   },
+   {
+    "id": 20,
+    "containerEntityId": 19,
+    "equipped": false,
+    "isAttuned": false,
+    "quantity": 1,
+    "definition": {
+     "name": "Bedroll",
+     "armorClass": null,
+     "armorTypeId": null,
+     "damage": null,
+     "damageType": null,
+     "attackType": null,
+     "properties": [],
+     "weight": 7,
+     "bundleSize": 1,
+     "magic": false,
+     "canAttune": false,
+     "canEquip": true,
+     "isConsumable": false,
+     "isContainer": false,
+     "grantedModifiers": []
+    }
+   }
+  ]
+ }
+}

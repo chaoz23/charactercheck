@@ -1,0 +1,438 @@
+{
+ "data": {
+  "username": "fixture-bot",
+  "overrideStats": [
+   {
+    "id": 1,
+    "value": null
+   },
+   {
+    "id": 2,
+    "value": null
+   },
+   {
+    "id": 3,
+    "value": null
+   },
+   {
+    "id": 4,
+    "value": null
+   },
+   {
+    "id": 5,
+    "value": null
+   },
+   {
+    "id": 6,
+    "value": null
+   }
+  ],
+  "bonusStats": [
+   {
+    "id": 1,
+    "value": null
+   },
+   {
+    "id": 2,
+    "value": null
+   },
+   {
+    "id": 3,
+    "value": null
+   },
+   {
+    "id": 4,
+    "value": null
+   },
+   {
+    "id": 5,
+    "value": null
+   },
+   {
+    "id": 6,
+    "value": null
+   }
+  ],
+  "bonusHitPoints": null,
+  "overrideHitPoints": null,
+  "removedHitPoints": 0,
+  "temporaryHitPoints": 0,
+  "inspiration": false,
+  "alignmentId": 2,
+  "currentXp": 900,
+  "age": 30,
+  "height": "5'10\"",
+  "weight": 170,
+  "hair": "brown",
+  "skin": "tan",
+  "eyes": "grey",
+  "deathSaves": {
+   "successCount": null,
+   "failCount": null
+  },
+  "conditions": [],
+  "customItems": [],
+  "spells": {
+   "class": [
+    {
+     "definition": {
+      "name": "Sacred Flame",
+      "level": 0
+     }
+    },
+    {
+     "definition": {
+      "name": "Bless",
+      "level": 1
+     },
+     "prepared": true
+    }
+   ],
+   "race": [],
+   "item": [],
+   "feat": []
+  },
+  "notes": {
+   "organizations": null
+  },
+  "traits": {
+   "personalityTraits": "steady",
+   "ideals": "duty",
+   "bonds": "the order",
+   "flaws": "stubborn"
+  },
+  "currencies": {
+   "cp": 0,
+   "sp": 10,
+   "ep": 0,
+   "gp": 25,
+   "pp": 0
+  },
+  "preferences": {
+   "hitPointType": 1
+  },
+  "characterValues": [],
+  "feats": [],
+  "pactMagic": [],
+  "classSpells": [],
+  "spellSlots": [
+   {
+    "level": 1,
+    "available": 4,
+    "used": 1
+   }
+  ],
+  "actions": {
+   "class": [
+    {
+     "name": "Channel Divinity",
+     "limitedUse": {
+      "maxUses": 2,
+      "numberUsed": 0
+     }
+    }
+   ],
+   "race": [],
+   "feat": []
+  },
+  "id": 90000001,
+  "name": "Torvald Brightmantle",
+  "stats": [
+   {
+    "id": 1,
+    "value": 14
+   },
+   {
+    "id": 2,
+    "value": 10
+   },
+   {
+    "id": 3,
+    "value": 14
+   },
+   {
+    "id": 4,
+    "value": 10
+   },
+   {
+    "id": 5,
+    "value": 16
+   },
+   {
+    "id": 6,
+    "value": 12
+   }
+  ],
+  "baseHitPoints": 18,
+  "race": {
+   "fullName": "Human",
+   "sizeId": 4,
+   "weightSpeeds": {
+    "normal": {
+     "walk": 30
+    }
+   },
+   "racialTraits": [
+    {
+     "definition": {
+      "name": "Resourceful"
+     }
+    }
+   ]
+  },
+  "background": {
+   "definition": {
+    "name": "Acolyte"
+   }
+  },
+  "classes": [
+   {
+    "level": 3,
+    "hitDiceUsed": 1,
+    "definition": {
+     "id": 500,
+     "name": "Cleric",
+     "hitDice": 8,
+     "spellCastingAbilityId": 5
+    },
+    "subclassDefinition": {
+     "name": "Life Domain",
+     "classFeatures": [
+      {
+       "definition": {
+        "name": "Disciple of Life"
+       }
+      }
+     ]
+    },
+    "classFeatures": [
+     {
+      "definition": {
+       "id": 5001,
+       "name": "Channel Divinity"
+      }
+     }
+    ]
+   }
+  ],
+  "modifiers": {
+   "race": [
+    {
+     "type": "language",
+     "subType": "common",
+     "value": null,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": "Common"
+    }
+   ],
+   "class": [
+    {
+     "type": "proficiency",
+     "subType": "wisdom-saving-throws",
+     "value": null,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    },
+    {
+     "type": "proficiency",
+     "subType": "charisma-saving-throws",
+     "value": null,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    },
+    {
+     "type": "proficiency",
+     "subType": "insight",
+     "value": null,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    },
+    {
+     "type": "proficiency",
+     "subType": "religion",
+     "value": null,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    },
+    {
+     "type": "proficiency",
+     "subType": "light-armor",
+     "value": null,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    },
+    {
+     "type": "proficiency",
+     "subType": "medium-armor",
+     "value": null,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    },
+    {
+     "type": "proficiency",
+     "subType": "shields",
+     "value": null,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    },
+    {
+     "type": "proficiency",
+     "subType": "simple-weapons",
+     "value": null,
+     "statId": null,
+     "componentId": null,
+     "isGranted": true,
+     "friendlySubtypeName": null
+    }
+   ],
+   "background": [],
+   "feat": [],
+   "item": [],
+   "condition": []
+  },
+  "inventory": [
+   {
+    "id": 1,
+    "containerEntityId": 90000001,
+    "equipped": true,
+    "isAttuned": false,
+    "quantity": 1,
+    "definition": {
+     "name": "Chain Shirt",
+     "armorClass": 13,
+     "armorTypeId": 2,
+     "damage": null,
+     "damageType": null,
+     "attackType": null,
+     "properties": [],
+     "weight": 20,
+     "bundleSize": 1,
+     "magic": false,
+     "canAttune": false,
+     "canEquip": true,
+     "isConsumable": false,
+     "isContainer": false,
+     "grantedModifiers": []
+    }
+   },
+   {
+    "id": 2,
+    "containerEntityId": 90000001,
+    "equipped": true,
+    "isAttuned": false,
+    "quantity": 1,
+    "definition": {
+     "name": "Shield",
+     "armorClass": 2,
+     "armorTypeId": 4,
+     "damage": null,
+     "damageType": null,
+     "attackType": null,
+     "properties": [],
+     "weight": 6,
+     "bundleSize": 1,
+     "magic": false,
+     "canAttune": false,
+     "canEquip": true,
+     "isConsumable": false,
+     "isContainer": false,
+     "grantedModifiers": []
+    }
+   },
+   {
+    "id": 3,
+    "containerEntityId": 90000001,
+    "equipped": true,
+    "isAttuned": false,
+    "quantity": 1,
+    "definition": {
+     "name": "Mace",
+     "armorClass": null,
+     "armorTypeId": null,
+     "damage": {
+      "diceString": "1d6"
+     },
+     "damageType": "Bludgeoning",
+     "attackType": 1,
+     "properties": [
+      {
+       "name": "Sap"
+      }
+     ],
+     "weight": 4,
+     "bundleSize": 1,
+     "magic": false,
+     "canAttune": false,
+     "canEquip": true,
+     "isConsumable": false,
+     "isContainer": false,
+     "grantedModifiers": []
+    }
+   },
+   {
+    "id": 4,
+    "containerEntityId": 90000001,
+    "equipped": true,
+    "isAttuned": false,
+    "quantity": 1,
+    "definition": {
+     "name": "Backpack",
+     "armorClass": null,
+     "armorTypeId": null,
+     "damage": null,
+     "damageType": null,
+     "attackType": null,
+     "properties": [],
+     "weight": 5,
+     "bundleSize": 1,
+     "magic": false,
+     "canAttune": false,
+     "canEquip": true,
+     "isConsumable": false,
+     "isContainer": true,
+     "grantedModifiers": []
+    }
+   },
+   {
+    "id": 5,
+    "containerEntityId": 4,
+    "equipped": false,
+    "isAttuned": false,
+    "quantity": 1,
+    "definition": {
+     "name": "Bedroll",
+     "armorClass": null,
+     "armorTypeId": null,
+     "damage": null,
+     "damageType": null,
+     "attackType": null,
+     "properties": [],
+     "weight": 7,
+     "bundleSize": 1,
+     "magic": false,
+     "canAttune": false,
+     "canEquip": true,
+     "isConsumable": false,
+     "isContainer": false,
+     "grantedModifiers": []
+    }
+   }
+  ]
+ }
+}
