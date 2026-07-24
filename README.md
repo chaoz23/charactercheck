@@ -77,3 +77,6 @@ stance(fetch("<id>"))          # hands / AC states / attack lines
 - Schema semantics for the D&D Beyond v5 payload were partly informed by reading the source of [MrPrimate/ddb-importer](https://github.com/MrPrimate/ddb-importer) (MIT) — the most complete derivation math in the ecosystem, coupled to FoundryVTT. No code was copied; see `NOTICE`.
 - The 100-question QA schema was authored for this project.
 - D&D Beyond is a trademark of Wizards of the Coast. charactercheck is unofficial, unaffiliated, and reads only what a character's owner has made public.
+
+<!-- MCP registry ownership marker (do not remove): binds this repo's PyPI package to its registry namespace. -->
+mcp-name: io.github.chaoz23/charactercheck
