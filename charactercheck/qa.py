@@ -7,7 +7,8 @@ NO (not yet extractable — the honest lane).
 """
 
 from . import engine
-from .engine import ABIL, ABILN, ALIGN, SKILLS
+from .engine import ABIL, ABILN, ALIGN, SKILLS, FEAT_CATEGORIES
+import re as _re
 
 
 def run(ref):
@@ -89,9 +90,14 @@ def run(ref):
     langs = sorted({(m.get("friendlySubtypeName") or m.get("subType") or "").title()
                     for m in W["mods"] if m.get("type") == "language"} - {""})
     add(67, "languages", "OK", langs or "(none)")
-    add(68, "originFeat", "NO",
-        "origin-vs-general classification not modeled (componentId source mapping — planned)")
-    add(69, "generalFeats", "PARTIAL", f"{W['feats']} (origin/general not split)")
+    def _cat(f):
+        return FEAT_CATEGORIES.get(_re.sub(r"\s*\(.*\)$", "", f))
+    origin = [f for f in W["feats"] if _cat(f) == "Origin"]
+    others = [(f, _cat(f) or "outside SRD table") for f in W["feats"] if _cat(f) != "Origin"]
+    add(68, "originFeat", "OK" if origin else "PARTIAL",
+        origin[0] if len(origin) == 1 else (origin or
+        "(none — no SRD-origin-category feat on this sheet; legacy builds predate origin feats)"))
+    add(69, "generalFeats", "OK", [f"{f} [{c}]" for f, c in others] or "(none)")
     add(70, "epicBoons", "OK", [f for f in W["feats"] if "boon" in f.lower()] or "(none)")
     add(71, "speciesTraits", "OK", sorted(
         {(t.get("definition") or {}).get("name") for t in race.get("racialTraits", [])} - {None})[:12])

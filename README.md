@@ -33,7 +33,7 @@ Works on any **public** D&D Beyond character (URL, bare id, or a saved character
 ## For agents
 
 - **`tool.json`** at the repo root and **`charactercheck --schema`** describe the full I/O contract.
-- **Exit codes are the three honesty lanes:** `0` = derived clean · `1` = lint findings (the sheet looks inconsistent) · `2` = unhandled content present (data the engine recognizes as *there* but does not model — each pattern named in `unhandled`). **⚠ Exit 2 is NOT a failure** — the derivation output is complete and usable; the nonzero code is your cue to *also* resolve the named unhandled items with a human. Don't retry.
+- **Exit codes are the three honesty lanes:** `0` = derived clean · `1` = lint findings (the sheet looks inconsistent) · `2` = unhandled content present (data the engine recognizes as *there* but does not model — each pattern named in `unhandled` **with `possibly_affects` — exactly which derived numbers to double-check — and a `verified_clean` list of stat families the unknowns cannot touch** (0.2.0)). **⚠ Exit 2 is NOT a failure** — the derivation output is complete and usable; the nonzero code is your cue to *also* resolve the named unhandled items with a human. Don't retry.
 - **`--pipe`** reads refs from stdin for batch runs.
 - **MCP server**: `charactercheck-mcp` (stdio) exposes `derive`, `stance`, `qa`, `report`.
 - Every derived number carries a **provenance string** — the arithmetic that produced it — so a downstream agent (or a suspicious player) can audit any value without re-deriving it.
@@ -42,6 +42,10 @@ Works on any **public** D&D Beyond character (URL, bare id, or a saved character
 $ charactercheck stance <ref>    # what's in each hand, AC states with costs
 $ charactercheck report <ref>    # ONLY the honesty lanes — resolve these before play
 $ charactercheck qa <ref>        # the 100-question pass, per-question OK/PARTIAL/NO
+$ charactercheck diff <ref> --baseline intake.json   # the sheet is a LIVE state store:
+                                 # classify what the player changed mid-session —
+                                 # state (engine's lane) vs build (mini-intake) vs
+                                 # impossible edits (equipping gear stashed elsewhere)
 ```
 
 ## Why provenance and refusal, not just numbers

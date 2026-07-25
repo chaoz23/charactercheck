@@ -26,6 +26,14 @@ TOOLS = [
         "Run the 100-question character-sheet QA pass; per-question OK/PARTIAL/NO.",
      "inputSchema": {"type": "object", "properties": {
          "ref": {"type": "string"}, "full": {"type": "boolean"}}, "required": ["ref"]}},
+    {"name": "diff", "description":
+        "Classify deltas between an intake snapshot and the live sheet — the DDB "
+        "sheet is a live state store players edit during play. Lanes: state_changes "
+        "(engine's authority), build_changes (player's declaration channel), lint "
+        "(impossible edits), unhandled_new (new unmodeled content).",
+     "inputSchema": {"type": "object", "properties": {
+         "ref": {"type": "string"}, "baseline_path": {"type": "string"}},
+         "required": ["ref", "baseline_path"]}},
     {"name": "report", "description":
         "Only the honesty lanes: unhandled data patterns + lint + identified feats — "
         "what a table must resolve before play.",
@@ -44,6 +52,9 @@ def _call(name, args):
         text, counts = qa.report(ref, full=args.get("full", False))
         return {"scorecard": {"ok": counts[0], "partial": counts[1], "no": counts[2]},
                 "text": text}
+    if name == "diff":
+        return engine.diff_payloads(engine.fetch(args["baseline_path"]),
+                                    engine.fetch(ref))
     if name == "report":
         r = derive(ref)
         return {"unhandled": r["unhandled"], "lint": r["lint"],
@@ -68,7 +79,7 @@ def main():
                 resp["result"] = {
                     "protocolVersion": req.get("params", {}).get("protocolVersion", "2024-11-05"),
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "charactercheck", "version": "0.1.0"}}
+                    "serverInfo": {"name": "charactercheck", "version": "0.2.0"}}
             elif method == "notifications/initialized":
                 continue
             elif method == "tools/list":

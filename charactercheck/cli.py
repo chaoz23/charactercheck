@@ -20,7 +20,7 @@ SCHEMA = {
 
 
 def _exit_code(result):
-    if result.get("unhandled", {}).get("modifier_patterns"):
+    if result.get("unhandled", {}).get("items"):
         return 2
     if result.get("lint"):
         return 1
@@ -30,12 +30,13 @@ def _exit_code(result):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="charactercheck", description=__doc__)
     ap.add_argument("command", nargs="?",
-                    choices=["derive", "stance", "qa", "report"], default="derive")
+                    choices=["derive", "stance", "qa", "report", "diff"], default="derive")
     ap.add_argument("ref", nargs="?", help="DDB character URL / id / JSON file")
     ap.add_argument("--full", action="store_true", help="qa: print all 100 rows")
     ap.add_argument("--pipe", action="store_true", help="read refs from stdin, one per line")
+    ap.add_argument("--baseline", help="diff: the intake snapshot JSON to compare against")
+    ap.add_argument("--version", action="version", version="charactercheck 0.2.0")
     ap.add_argument("--schema", action="store_true", help="print the I/O contract and exit")
-    ap.add_argument("--version", action="version", version="charactercheck 0.1.1")
     a = ap.parse_args(argv)
 
     if a.schema:
@@ -56,6 +57,14 @@ def main(argv=None):
         elif a.command == "qa":
             text, _ = qa.report(ref, full=a.full)
             print(text)
+        elif a.command == "diff":
+            if not a.baseline:
+                ap.error("diff requires --baseline <intake-snapshot.json>")
+            old = engine.fetch(a.baseline)
+            new = engine.fetch(ref)
+            d = engine.diff_payloads(old, new)
+            print(json.dumps(d, indent=1))
+            code = max(code, 1 if any(d.values()) else 0)
         elif a.command == "report":
             r = derive(ref)
             out = {"unhandled": r["unhandled"], "lint": r["lint"],

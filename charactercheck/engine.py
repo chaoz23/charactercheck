@@ -37,6 +37,32 @@ SKILL_IDS = {3: "acrobatics", 11: "animal-handling", 6: "arcana", 2: "athletics"
 MASTERIES = {"Vex", "Nick", "Sap", "Topple", "Slow", "Push", "Graze",
              "Cleave", "Flex"}
 
+# SRD 5.2.1 feat categories (closed set, extracted from the source text).
+FEAT_CATEGORIES = {
+    "Alert": "Origin", "Magic Initiate": "Origin", "Savage Attacker": "Origin",
+    "Skilled": "Origin", "Ability Score Improvement": "General",
+    "Grappler": "General", "Archery": "Fighting Style", "Defense": "Fighting Style",
+    "Great Weapon Fighting": "Fighting Style", "Two-Weapon Fighting": "Fighting Style",
+    "Boon of Combat Prowess": "Epic Boon", "Boon of Dimensional Travel": "Epic Boon",
+    "Boon of Fate": "Epic Boon", "Boon of Irresistible Offense": "Epic Boon",
+    "Boon of Spell Recall": "Epic Boon", "Boon of Truesight": "Epic Boon",
+    "Boon of the Night Spirit": "Epic Boon",
+}
+
+# Blast-radius map: which derived stats an unhandled pattern could affect.
+# Data, versioned with the package. Unknown patterns get the honest maximal
+# radius. (v0.2 — cold-probe feedback: name WHICH numbers to double-check.)
+BLAST_MAP = {
+    "characterValues typeId 34": (["spell_attack_bonus"], "per-spell-class attack override family"),
+    "characterValues typeId 35": (["spell_save_dc"], "per-spell-class DC bonus family"),
+    "characterValues typeId 33": (["spellcasting"], "spell-class override family"),
+    "bonus:speed": (["speeds"], "movement bonus"),
+    "bonus:magic": (["attacks"], "magic attack bonus"),
+    "bonus:saving-throws": (["saves"], "all-saves bonus"),
+    "bonus:proficiency-bonus": (["proficiency_bonus", "saves", "skills", "attacks", "spell_save_dc"], "PB modifier"),
+}
+MAXIMAL = ["unknown — treat all derived values as unverified"]
+
 # modifier type:subType patterns the engine understands (everything else is
 # reported in `unhandled.modifiers` — the completeness contract)
 _SKILL_SET = set(SKILLS)
@@ -507,7 +533,88 @@ def derive(ref):
         "resources": W["resources"],
         "inventory": {"weight_carried": W["weight"], "magic_items": W["magic"],
                       "attuned": W["attuned"], "stashed_elsewhere": W["stash_notes"]},
-        "feats_identified": W["feats"],
-        "unhandled": {"modifier_patterns": W["unhandled_modifiers"]},
+        "feats_identified": [
+            {"name": f,
+             "category": FEAT_CATEGORIES.get(re.sub(r"\s*\(.*\)$", "", f),
+                                             "outside SRD 5.2.1 feat table")}
+            for f in W["feats"]],
+        "unhandled": {
+            "items": [
+                {"pattern": pat,
+                 "possibly_affects": BLAST_MAP.get(pat, (MAXIMAL, None))[0],
+                 "note": BLAST_MAP.get(pat, (None, None))[1]}
+                for pat in W["unhandled_modifiers"]],
+            "verified_clean": ([] if any(
+                BLAST_MAP.get(p, (MAXIMAL, None))[0] == MAXIMAL
+                for p in W["unhandled_modifiers"])
+                else sorted({"ac", "initiative", "hp", "saves", "skills", "weapons"}
+                            - {a for p in W["unhandled_modifiers"]
+                               for a in BLAST_MAP.get(p, ([], None))[0]})),
+        },
         "lint": W["lint"],
     }
+
+
+STATE_FIELDS = {"removedHitPoints": "hp.current", "temporaryHitPoints": "hp.temp",
+                "inspiration": "heroic_inspiration"}
+
+
+def diff_payloads(old, new):
+    """Classify sheet deltas: the DDB sheet is a LIVE state store players edit
+    during play (Oz, 2026-07-24). state_changes = engine's authority, reported
+    never applied; build_changes = the player's declaration channel -> mini-
+    intake; lint = physically impossible edits; unhandled_new = new content
+    the engine doesn't model."""
+    out = {"state_changes": [], "build_changes": [], "lint": [], "unhandled_new": []}
+    for f, stat in STATE_FIELDS.items():
+        if (old.get(f) or 0) != (new.get(f) or 0):
+            out["state_changes"].append({"field": f, "was": old.get(f) or 0,
+                                         "now": new.get(f) or 0, "affects": [stat]})
+    slots_o = {s["level"]: s.get("used", 0) for s in old.get("spellSlots", [])}
+    slots_n = {s["level"]: s.get("used", 0) for s in new.get("spellSlots", [])}
+    for lvl in sorted(set(slots_o) | set(slots_n)):
+        if slots_o.get(lvl, 0) != slots_n.get(lvl, 0):
+            out["state_changes"].append({"field": f"spellSlots.L{lvl}.used",
+                                         "was": slots_o.get(lvl, 0),
+                                         "now": slots_n.get(lvl, 0),
+                                         "affects": ["spell_slots_current"]})
+    # build: equipped/attuned flips + new/removed items
+    def items(d):
+        return {it["id"]: it for it in d.get("inventory", [])}
+    io, i_n = items(old), items(new)
+    Wn = build(new)
+    for iid in sorted(set(io) | set(i_n)):
+        o, n = io.get(iid), i_n.get(iid)
+        name = ((n or o).get("definition") or {}).get("name")
+        if o and not n:
+            out["build_changes"].append({"field": f"{name}.removed", "affects": ["inventory"]})
+        elif n and not o:
+            de = n.get("definition") or {}
+            entry = {"field": f"{name}.added", "affects": ["inventory"]}
+            if de.get("armorClass"):
+                entry["affects"] = ["ac", "inventory"]
+            out["build_changes"].append(entry)
+        else:
+            de = n.get("definition") or {}
+            if bool(o.get("equipped")) != bool(n.get("equipped")):
+                aff = ["ac", "stance"] if de.get("armorClass") else                       (["weapons", "stance"] if (de.get("damage") or {}).get("diceString")
+                       else ["inventory"])
+                ch = {"field": f"{name}.equipped", "was": bool(o.get("equipped")),
+                      "now": bool(n.get("equipped")), "affects": aff}
+                if n.get("equipped") and not Wn["carried"](n):
+                    out["lint"].append({"finding": f"equipped '{name}' — but it sits in a "
+                                        "container stashed elsewhere",
+                                        "affects": aff, "severity": "impossible"})
+                out["build_changes"].append(ch)
+            if bool(o.get("isAttuned")) != bool(n.get("isAttuned")):
+                out["build_changes"].append({"field": f"{name}.isAttuned",
+                                             "was": bool(o.get("isAttuned")),
+                                             "now": bool(n.get("isAttuned")),
+                                             "affects": ["attunement"]})
+    # new unhandled content
+    Wo = build(old)
+    new_unh = sorted(set(Wn["unhandled_modifiers"]) - set(Wo["unhandled_modifiers"]))
+    for pat in new_unh:
+        out["unhandled_new"].append({"pattern": pat,
+                                     "possibly_affects": BLAST_MAP.get(pat, (MAXIMAL, None))[0]})
+    return out

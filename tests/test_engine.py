@@ -45,7 +45,7 @@ class TestTorvald(unittest.TestCase):
 
     def test_clean_exit(self):
         self.assertEqual(_exit_code(self.r), 0)
-        self.assertEqual(self.r["unhandled"]["modifier_patterns"], [])
+        self.assertEqual(self.r["unhandled"]["items"], [])
         self.assertEqual(self.r["lint"], [])
 
     def test_mastery_from_properties(self):
@@ -92,7 +92,8 @@ class TestVexa(unittest.TestCase):
                       self.r["inventory"]["stashed_elsewhere"])
 
     def test_unhandled_lane(self):
-        self.assertIn("munch:cookies", self.r["unhandled"]["modifier_patterns"])
+        pats = [i["pattern"] for i in self.r["unhandled"]["items"]]
+        self.assertIn("munch:cookies", pats)
         self.assertEqual(_exit_code(self.r), 2)
 
     def test_pact_slots(self):
@@ -109,3 +110,87 @@ class TestQA(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestV02BlastRadius(unittest.TestCase):
+    """Cold probe 2026-07-24: 'unhandled names what, not which numbers.'"""
+
+    def test_unmapped_pattern_gets_maximal_radius(self):
+        r = derive(VEXA)   # planted munch:cookies
+        item = [i for i in r["unhandled"]["items"] if i["pattern"] == "munch:cookies"][0]
+        self.assertIn("unknown", item["possibly_affects"][0])
+        self.assertEqual(r["unhandled"]["verified_clean"], [])   # maximal → nothing cleared
+
+    def test_clean_sheet_has_no_items(self):
+        r = derive(TORVALD)
+        self.assertEqual(r["unhandled"]["items"], [])
+
+
+class TestV02FeatClassification(unittest.TestCase):
+    def test_feats_carry_categories(self):
+        import copy
+        d = json.load(open(VEXA))["data"]
+        d["feats"] = [{"definition": {"name": "Alert"}},
+                      {"definition": {"name": "Grappler"}},
+                      {"definition": {"name": "Fey Touched"}}]
+        import charactercheck.engine as E
+        W = E.build(d)
+        from charactercheck import qa as Q
+        # write temp fixture for qa path
+        import tempfile, os as _os
+        p = tempfile.mktemp(suffix=".json")
+        json.dump({"data": d}, open(p, "w"))
+        rows = Q.run(p)
+        r68 = [x for x in rows if x[0] == 68][0]
+        self.assertEqual(r68[2], "OK")
+        self.assertEqual(r68[3], "Alert")
+        r69 = [x for x in rows if x[0] == 69][0]
+        self.assertIn("Grappler [General]", r69[3])
+        self.assertIn("Fey Touched [outside SRD table]", r69[3])
+        _os.unlink(p)
+
+
+class TestV02Diff(unittest.TestCase):
+    """The sheet is a LIVE state store (Oz, 2026-07-24)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import copy
+        from charactercheck.engine import diff_payloads
+        cls.old = json.load(open(VEXA))["data"]
+        cls.dp = staticmethod(diff_payloads)
+
+    def _new(self):
+        import copy
+        return copy.deepcopy(self.old)
+
+    def test_hp_edit_is_state(self):
+        n = self._new(); n["removedHitPoints"] = 12
+        d = self.dp(self.old, n)
+        self.assertEqual(d["state_changes"][0]["affects"], ["hp.current"])
+        self.assertEqual(d["build_changes"], [])
+
+    def test_shield_flip_is_build_with_ac_radius(self):
+        n = self._new()
+        for it in n["inventory"]:
+            if it["definition"]["name"] == "Shield":
+                it["equipped"] = True
+        d = self.dp(self.old, n)
+        ch = [c for c in d["build_changes"] if c["field"] == "Shield.equipped"][0]
+        self.assertIn("ac", ch["affects"])
+
+    def test_equipping_stashed_gear_is_impossible_lint(self):
+        n = self._new()
+        for it in n["inventory"]:
+            if it["definition"]["name"] == "Chain Mail":
+                it["equipped"] = True     # it lives in the stashed chest
+        d = self.dp(self.old, n)
+        self.assertEqual(d["lint"][0]["severity"], "impossible")
+
+    def test_new_homebrew_reopens_interview(self):
+        n = self._new()
+        n["modifiers"]["feat"].append({"type": "weird", "subType": "aura",
+                                       "value": 1, "isGranted": True})
+        d = self.dp(self.old, n)
+        self.assertTrue(d["unhandled_new"])
+        self.assertIn("unknown", d["unhandled_new"][0]["possibly_affects"][0])
