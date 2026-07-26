@@ -86,3 +86,20 @@ stance(fetch("<id>"))          # hands / AC states / attack lines
 
 <!-- MCP registry ownership marker (do not remove): binds this repo's PyPI package to its registry namespace. -->
 mcp-name: io.github.chaoz23/charactercheck
+
+
+## The settlement quiz (v0.3)
+
+```
+charactercheck quiz <ref>
+```
+
+Questions the GM asks **out loud** at a ledger-flush boundary, each with the
+silently-held expected answer where derivation has authority (AC, HP max,
+total slots, attunement — with provenance strings). Live state only the
+player tracks (current HP, expended slots) is `expect: null,
+authority: "player"` — the engine never estimates. Grade privately, remind
+diplomatically; `diff` against the intake snapshot is the reality check.
+Unhandled patterns propagate as a caveat naming what the answer key cannot
+verify. Unhandled items now also carry the payload's own verbatim `text`
+so intake interviews read the source's words, never a paraphrase.
