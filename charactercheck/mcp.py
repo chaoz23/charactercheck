@@ -34,6 +34,10 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {
          "ref": {"type": "string"}, "baseline_path": {"type": "string"}},
          "required": ["ref", "baseline_path"]}},
+    {"name": "seatpack", "description":
+        "Everything a seat needs at session start: abilities, saves, skills, passives, DCs, combat block, resources, inventory, vision features (incl. Devil's Sight-class invocations), and verbatim sheet persona with an explicit not_derivable list. for_dm=true redacts player-authority live state.",
+     "inputSchema": {"type": "object", "properties": {"ref": {"type": "string"}, "for_dm": {"type": "boolean"}},
+                     "required": ["ref"]}},
     {"name": "quiz", "description":
         "Settlement quiz for a character: questions the GM asks out loud plus the silent expected answers; player-authority live state (current HP, expended slots) is null by contract.",
      "inputSchema": {"type": "object", "properties": {"ref": {"type": "string"}},
@@ -56,6 +60,8 @@ def _call(name, args):
         text, counts = qa.report(ref, full=args.get("full", False))
         return {"scorecard": {"ok": counts[0], "partial": counts[1], "no": counts[2]},
                 "text": text}
+    if name == "seatpack":
+        return engine.seatpack(ref, for_dm=bool(args.get("for_dm")))
     if name == "quiz":
         return engine.quiz(ref)
     if name == "diff":
@@ -85,7 +91,7 @@ def main():
                 resp["result"] = {
                     "protocolVersion": req.get("params", {}).get("protocolVersion", "2024-11-05"),
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "charactercheck", "version": "0.3.0"}}
+                    "serverInfo": {"name": "charactercheck", "version": "0.4.0"}}
             elif method == "notifications/initialized":
                 continue
             elif method == "tools/list":

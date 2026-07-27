@@ -13,6 +13,7 @@ SCHEMA = {
         "stance": "pre-combat block: hands, AC states with costs, attack lines",
         "qa": "run the 100-question QA pass (--full for all rows)",
         "report": "unhandled + lint only — what a table must resolve before play",
+        "seatpack": "everything a seat needs at session start: stats, saves, skills, passives, DCs, features, vision, verbatim persona (--for-dm redacts player-authority state)",
         "quiz": "settlement quiz: questions to ask out loud + the silent answer key (player-authority fields stay null)",
         "diff": "classify every delta between a baseline snapshot and the live sheet",
     },
@@ -32,12 +33,13 @@ def _exit_code(result):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="charactercheck", description=__doc__)
     ap.add_argument("command", nargs="?",
-                    choices=["derive", "stance", "qa", "report", "diff", "quiz"], default="derive")
+                    choices=["derive", "stance", "qa", "report", "diff", "quiz", "seatpack"], default="derive")
     ap.add_argument("ref", nargs="?", help="DDB character URL / id / JSON file")
     ap.add_argument("--full", action="store_true", help="qa: print all 100 rows")
     ap.add_argument("--pipe", action="store_true", help="read refs from stdin, one per line")
+    ap.add_argument("--for-dm", action="store_true", help="seatpack: redact player-authority live state")
     ap.add_argument("--baseline", help="diff: the intake snapshot JSON to compare against")
-    ap.add_argument("--version", action="version", version="charactercheck 0.3.0")
+    ap.add_argument("--version", action="version", version="charactercheck 0.4.0")
     ap.add_argument("--schema", action="store_true", help="print the I/O contract and exit")
     a = ap.parse_args(argv)
 
@@ -67,6 +69,8 @@ def main(argv=None):
             d = engine.diff_payloads(old, new)
             print(json.dumps(d, indent=1))
             code = max(code, 1 if any(d.values()) else 0)
+        elif a.command == "seatpack":
+            print(json.dumps(engine.seatpack(ref, for_dm=a.for_dm), indent=1))
         elif a.command == "quiz":
             print(json.dumps(engine.quiz(ref), indent=1))
         elif a.command == "report":

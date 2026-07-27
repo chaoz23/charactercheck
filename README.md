@@ -103,3 +103,19 @@ diplomatically; `diff` against the intake snapshot is the reality check.
 Unhandled patterns propagate as a caveat naming what the answer key cannot
 verify. Unhandled items now also carry the payload's own verbatim `text`
 so intake interviews read the source's words, never a paraphrase.
+
+
+## The seat pack (v0.4)
+
+```
+charactercheck seatpack <ref> [--for-dm]
+```
+
+Everything a seat needs at session start, in one call: abilities, saves,
+skills with proficiency flags, passives, DCs, combat block, resources,
+inventory, **vision** (species darkvision plus Devil's Sight-class features,
+with provenance — born from a live table where a DM narrated a warlock blind),
+and a persona section carrying the sheet's own trait/ideal/bond/flaw text
+verbatim with an explicit `not_derivable` list: charactercheck never invents
+personality. `--for-dm` redacts player-authority live state per the
+settlement contract.

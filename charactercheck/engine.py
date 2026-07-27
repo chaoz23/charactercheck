@@ -669,3 +669,95 @@ def quiz(ref):
                        "blast radius are unverified: "
                        + ", ".join(i["pattern"] for i in unh)) if unh else None,
             "contract": "answer key is SILENT — grade privately, remind diplomatically (S3c)"}
+
+VISION_FEATURES = {
+    # feature/invocation name -> (range_ft or None if payload-dependent, note)
+    "Devil's Sight": (120, "see normally in magical and nonmagical darkness"),
+    "Superior Darkvision": (120, "darkvision 120 ft"),
+    "Blindsight": (None, "perceive without sight; range per feature text"),
+    "Truesight": (None, "true seeing; range per feature text"),
+}
+
+
+def vision(d):
+    """Every sight-in-darkness capability on the sheet, with provenance.
+    Reported, never adjudicated - lighting conditions are the DM's lane."""
+    import re as _re
+    out = []
+    # 1) sense modifiers (species darkvision etc.)
+    for src, ml in (d.get("modifiers") or {}).items():
+        for m in ml or []:
+            if m and (m.get("subType") or "") == "darkvision":
+                out.append({"feature": "Darkvision",
+                            "range_ft": m.get("value"),
+                            "provenance": f"modifier ({src})"})
+    # 2) named vision features anywhere in the payload (options, class
+    #    features, feats). Name-keyed walk; provenance = the path context.
+    def walk(o, path):
+        if isinstance(o, dict):
+            n = o.get("name")
+            if isinstance(n, str):
+                norm = n.strip().replace("\u2019", "'")
+                for feat, (rng, note) in VISION_FEATURES.items():
+                    if norm == feat:
+                        snippet = (o.get("snippet") or o.get("description") or "")
+                        g = _re.search(r"(\d+)\s*f", snippet)
+                        out.append({"feature": feat,
+                                    "range_ft": int(g.group(1)) if g else rng,
+                                    "note": note, "provenance": path})
+            for k, v in o.items():
+                if isinstance(v, (dict, list)) and k != "definition" or k == "definition":
+                    walk(v, f"{path}.{k}" if path else k)
+        elif isinstance(o, list):
+            for i, v in enumerate(o):
+                walk(v, path)
+    walk(d, "")
+    # dedupe by (feature, range)
+    seen, uniq = set(), []
+    for v in out:
+        k = (v["feature"], v.get("range_ft"))
+        if k not in seen:
+            seen.add(k)
+            uniq.append(v)
+    return uniq
+
+
+def seatpack(ref, for_dm=False):
+    """Everything a seat needs at session start (spec: Ash, 2026-07-27).
+    Assembly with provenance - no new derivation, no invented persona."""
+    d = fetch(ref)
+    r = derive(ref)
+    sk = r.get("skills") or {}
+    passives = {f"passive_{k}": 10 + v["bonus"]
+                for k, v in sk.items()
+                if k in ("perception", "insight", "investigation") and "bonus" in v}
+    traits = d.get("traits") or (d.get("data") or {}).get("traits") or {}
+    persona = {k: v for k, v in traits.items() if v}
+    pack = {
+        "identity": r.get("identity"),
+        "abilities": r.get("abilities"),
+        "saves": r.get("saves"),
+        "skills": sk,
+        "passives": passives,
+        "combat": r.get("combat"),
+        "spellcasting": r.get("spellcasting"),
+        "resources": r.get("resources"),
+        "inventory": r.get("inventory"),
+        "vision": vision(d),
+        "persona": {
+            "from_sheet_verbatim": persona,
+            "not_derivable": ["fears beyond stated flaws", "motives beyond stated ideals/bonds",
+                              "relationships not on the sheet", "taboos",
+                              "behaviour under pressure"],
+        },
+        "unhandled": r.get("unhandled"),
+        "lint": r.get("lint"),
+    }
+    if for_dm:
+        hp = ((pack.get("combat") or {}).get("hp") or {})
+        if "current" in hp:
+            hp["current"] = "player-authority"
+        sp = pack.get("spellcasting") or {}
+        if sp and sp.get("slots_current") is not None:
+            sp["slots_current"] = "player-authority"
+    return pack
