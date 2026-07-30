@@ -1,0 +1,9 @@
+# charactercheck
+Deterministic D&D Beyond character-sheet derivation with provenance. Every
+stat computed and traceable; every unhandled case named with its blast
+radius; player-authority live state is never guessed. Install: pip install
+charactercheck. CLI: charactercheck derive|seatpack|stance|quiz|diff|report
+<ddb-url-or-json>. MCP server: io.github.chaoz23/charactercheck. Exit codes:
+0 clean, 1 lint, 2 unhandled-content (honest refusal, not failure). Ask it:
+"what is this character's AC and why", "everything a seat needs at session
+start", "what changed on this sheet since intake".
