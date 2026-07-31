@@ -101,6 +101,45 @@ not a gap. So:
    permissions involved at all — useful for private campaigns, air-gapped
    hosts, and CI.
 
+## The trust map — read this before you state a number
+
+`derive` returns a `trust` block that routes every family into exactly one
+lane. It is a re-shaping of `verified_clean`, `lint` and `unhandled` into the
+one question a caller actually has: **may I say this out loud?**
+
+```console
+$ charactercheck derive <ref> --brief
+Shalia — Cleric 3
+  AC 12 · HP 21/21 · init -1
+  trusted: hp, initiative, saves, skills, attacks, weapons, speeds, proficiency_bonus, spellcasting, spell_save_dc, spell_attack_bonus, inventory
+  ASK: ac, prepared_spells, spell_slots
+  UNSUPPORTED: spell_output (bonus:spell-group-healing)
+    ? Which armour are you actually wearing right now?
+    ? Your sheet shows no spell slots, but a caster of your level should have 4×L1, 2×L2. How many do you have?
+    ? Which leveled spells do you have prepared today?
+```
+
+| lane | meaning |
+|---|---|
+| **trusted** | nothing outstanding touches it — safe to state |
+| **ask_player** | derived, but a lint puts it in doubt; **the resolving question is right there** |
+| **unsupported** | the engine saw content it does not model targeting this family — say what is missing rather than stating a value |
+
+Unsupported content is **never applied** to any derived value, so the rest of
+the arithmetic is unaffected by it. Trust the computed fields; do not improvise
+around the named unsupported feature.
+
+**Every lint finding carries the question that resolves it** — the difference
+between a tool reporting a caveat and an agent resolving one at the table.
+
+```console
+$ charactercheck intake <ref>     # one pre-session packet: settled, unresolved, player-authority
+```
+
+> **Breaking in 0.6.0:** `lint` entries are now objects
+> (`{code, message, ask, affects}`) rather than plain strings. Join `message`
+> for the old rendering.
+
 ## What a derived character looks like
 
 ```console

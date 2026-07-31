@@ -16,6 +16,16 @@ a D&D Beyond account, or a character of your own, which isolates any remaining
 problem to access rather than to the tool. `AGENTS.md` at the repo root is the
 one-page agent guide.
 
+## The trust map (v0.6)
+
+`derive` returns a `trust` block routing every family into exactly one lane:
+`trusted` (safe to state), `ask_player` (in doubt — the resolving question is
+included), `unsupported` (content the engine does not model targets this
+family). Unsupported content is never applied, so the rest of the arithmetic
+stands. Every lint entry is {code, message, ask, affects} and carries a
+question a GM can read aloud. `--brief` renders it chat-sized; `intake` emits a
+pre-session packet.
+
 ## Failure contract (read this before filing anything)
 
 Exit codes: 0 derived clean · 1 lint findings · 2 unhandled content (NOT a

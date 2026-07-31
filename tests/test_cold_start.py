@@ -433,7 +433,9 @@ class TestSpellLintsAgainstRealCharacters(unittest.TestCase):
 
     def _lint(self, ref):
         code, out = run(["derive", ref])
-        return " | ".join(json.loads(out)["lint"])
+        # lint entries became structured objects in 0.6.0 so each finding can
+        # carry the question that resolves it; join the messages for matching.
+        return " | ".join(f["message"] for f in json.loads(out)["lint"])
 
     def test_cleric_three_with_no_slots_is_flagged_as_a_data_gap(self):
         lint = self._lint("150991647")

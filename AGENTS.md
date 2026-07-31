@@ -56,7 +56,24 @@ exactly two answers: set *Character Privacy* to Public on D&D Beyond, or save
 the character-service JSON and pass the file path — which needs no permissions
 at all.
 
-## 5. Trust the provenance, not the number
+## 5. Route on the trust map, not on vibes
+
+`derive` returns a `trust` block. Read it before stating anything:
+
+- **`trusted`** — safe to state.
+- **`ask_player`** — derived but in doubt. The question that resolves it is in
+  `asks`; ask it rather than guessing.
+- **`unsupported`** — the engine saw something it does not model targeting this
+  family. Say what is missing. Unsupported content was **never applied**, so
+  everything else is unaffected by it.
+
+`charactercheck derive <ref> --brief` prints the same thing chat-sized. Prefer
+it over summarising the JSON yourself — your summary can drift, this cannot.
+
+`charactercheck intake <ref>` gives one pre-session packet: what is settled,
+what must be asked before dice, and which fields are the player's to declare.
+
+## 6. Trust the provenance, not the number
 
 Every derived value carries the arithmetic that produced it:
 
@@ -68,7 +85,7 @@ If you are about to state a number to a human, you can state why. If a value
 matters and `unhandled` lists something under `possibly_affects`, say so rather
 than asserting.
 
-## 6. Do not re-derive by hand
+## 7. Do not re-derive by hand
 
 If you are tempted to parse the D&D Beyond payload yourself: don't. The
 modifier subTypes are full words (`wisdom-score`, not `wis-score`), item

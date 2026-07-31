@@ -1,6 +1,6 @@
 {
  "name": "charactercheck",
- "version": "0.5.4",
+ "version": "0.6.0",
  "description": "Deterministic D&D Beyond character-sheet derivation with provenance. Input: a public DDB character URL/id (or saved v5 JSON). Output: derived stats where every value carries its arithmetic, plus honest lanes: 'unhandled' (recognized-but-unmodeled data, named) and 'lint' (sheet inconsistencies).",
  "install": "pip install charactercheck  (or: uvx charactercheck ...)",
  "commands": {
@@ -13,7 +13,9 @@
   "charactercheck qa <ref> [--full]": "the 100-question QA pass",
   "charactercheck doctor [ref] [--json]": "diagnose why it is not working: python, DNS, outbound HTTPS, and character reachability. PASS/FAIL per check with the remedy on the first failure. Exit 0 all-pass, 3 otherwise.",
   "charactercheck --schema": "machine-readable I/O contract",
-  "charactercheck selftest": "prove the engine works offline against a bundled sample character — no network, no account, no character required. Exit 0 pass, 1 fail. Run this FIRST when bootstrapping: it separates 'the tool is broken' from 'I cannot reach that character'."
+  "charactercheck selftest": "prove the engine works offline against a bundled sample character — no network, no account, no character required. Exit 0 pass, 1 fail. Run this FIRST when bootstrapping: it separates 'the tool is broken' from 'I cannot reach that character'.",
+  "charactercheck intake <ref> [--for-dm]": "one pre-session packet: what is settled, what must be asked before dice, player-authority fields, and a baseline-snapshot hint. Composes seatpack + the trust map.",
+  "charactercheck derive <ref> --brief": "chat-sized deterministic summary: the trust lanes plus AC/HP/init. Prefer this over asking a model to summarise the JSON — a summary can drift, this cannot."
  },
  "exit_codes": {
   "0": "derived clean",
@@ -47,5 +49,14 @@
    "bad_json",
    "upstream"
   ]
+ },
+ "trust": {
+  "note": "`derive` returns a `trust` block routing every family into exactly one lane. Read this before stating a number to a human.",
+  "lanes": {
+   "trusted": "nothing outstanding touches it — safe to state",
+   "ask_player": "derived, but a lint puts it in doubt; the resolving question is in `asks`",
+   "unsupported": "content the engine does not model targets this family — say what is missing rather than stating a value"
+  },
+  "lint_shape": "each lint entry is {code, message, ask, affects} — `ask` is a question a GM can read aloud; `affects` routes it into ask_player"
  }
 }

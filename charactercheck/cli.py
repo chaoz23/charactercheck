@@ -49,13 +49,14 @@ from . import __version__
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="charactercheck", description=__doc__)
     ap.add_argument("command", nargs="?",
-                    choices=["derive", "stance", "qa", "report", "diff", "quiz", "seatpack", "doctor", "selftest"], default="derive")
+                    choices=["derive", "stance", "qa", "report", "diff", "quiz", "seatpack", "intake", "doctor", "selftest"], default="derive")
     ap.add_argument("ref", nargs="?", help="DDB character URL / id / JSON file")
     ap.add_argument("--full", action="store_true", help="qa: print all 100 rows")
     ap.add_argument("--pipe", action="store_true", help="read refs from stdin, one per line")
     ap.add_argument("--for-dm", action="store_true", help="seatpack: redact player-authority live state")
     ap.add_argument("--baseline", help="diff: the intake snapshot JSON to compare against")
     ap.add_argument("--version", action="version", version=f"charactercheck {__version__}")
+    ap.add_argument("--brief", action="store_true", help="derive: chat-sized deterministic summary")
     ap.add_argument("--json", dest="json_out", action="store_true", help="doctor: machine-readable output")
     ap.add_argument("--schema", action="store_true", help="print the I/O contract and exit")
     a = ap.parse_args(argv)
@@ -81,8 +82,10 @@ def main(argv=None):
       try:
           if a.command == "derive":
               r = derive(ref)
-              print(json.dumps(r, indent=1))
+              print(engine.render_brief(r) if a.brief else json.dumps(r, indent=1))
               code = max(code, _exit_code(r))
+          elif a.command == "intake":
+              print(json.dumps(engine.intake(ref, for_dm=a.for_dm), indent=1))
           elif a.command == "stance":
               d = engine.fetch(ref)
               print(json.dumps(engine.stance(d), indent=1))

@@ -230,6 +230,81 @@ def _slot_rows(d, key):
 
 
 
+#: Families a caller can route on. Kept in one place so the trust map, the
+#: lint entries and `verified_clean` cannot drift apart.
+TRUST_FAMILIES = ["ac", "hp", "initiative", "saves", "skills", "attacks",
+                  "weapons", "speeds", "proficiency_bonus", "spellcasting",
+                  "spell_save_dc", "spell_attack_bonus", "spell_output",
+                  "spell_slots", "prepared_spells", "inventory"]
+
+
+def _lint(W, code, message, ask=None, affects=()):
+    """Record a lint finding as something a caller can act on.
+
+    From live agent UXR: *"Every lint/unhandled should include a short human
+    question… This is the difference between 'tool reports caveat' and 'agent
+    resolves caveat at table.'"* Exactly right, and it is the same move that
+    made the exit-3 errors useful — a finding without a next action is
+    archaeology.
+
+    `affects` names the families this finding puts in doubt, which is what
+    routes them out of `trusted` and into `ask_player` in the trust map.
+    """
+    W["lint"].append({"code": code, "message": message,
+                      "ask": ask, "affects": sorted(affects)})
+
+
+def trust_map(lint, unhandled):
+    """Route every family into trusted / ask_player / unsupported.
+
+    From live agent UXR: *"agents need routing, not archaeology."* The three
+    lists already existed — `verified_clean`, `lint`, `unhandled` — but
+    scattered in shapes tuned for a human reading a report. An agent under
+    turn pressure needs one place that answers "may I state this number?"
+
+    The three lanes are deliberately exclusive and ordered by severity:
+
+      * ``unsupported`` — the engine saw something it does not model that
+        targets this family. Do not state these; say what is missing.
+      * ``ask_player``  — derived, but a lint puts it in doubt. One human
+        question resolves it, and that question is in ``asks``.
+      * ``trusted``     — nothing outstanding touches it. Safe to state.
+    """
+    unsupported = {}
+    for item in (unhandled or {}).get("items", []):
+        for fam in item.get("possibly_affects", []):
+            if fam in TRUST_FAMILIES:
+                unsupported.setdefault(fam, []).append(item["pattern"])
+
+    ask = {}
+    for f in lint or []:
+        for fam in f.get("affects", []):
+            if fam in unsupported:
+                continue
+            ask.setdefault(fam, []).append(
+                {"code": f.get("code"), "ask": f.get("ask")})
+
+    trusted = [f for f in TRUST_FAMILIES
+               if f not in unsupported and f not in ask]
+
+    asks = []
+    seen = set()
+    for f in lint or []:
+        q = f.get("ask")
+        if q and q not in seen:
+            seen.add(q)
+            asks.append({"code": f.get("code"), "ask": q,
+                         "affects": f.get("affects", [])})
+
+    return {"trusted": trusted,
+            "ask_player": {k: v for k, v in sorted(ask.items())},
+            "unsupported": {k: sorted(set(v)) for k, v in sorted(unsupported.items())},
+            "asks": asks,
+            "note": ("Unsupported content was NOT applied to any derived value — "
+                     "trust the computed fields, but do not improvise around the "
+                     "named unsupported feature.")}
+
+
 def build(d):
     """Derive everything once. Returns the raw derivation workspace (dict).
 
@@ -422,9 +497,15 @@ def build(d):
     worn = [i for i in body if i.get("equipped")]
     if not worn and body:
         worn = sorted(body, key=acof, reverse=True)[:1]
-        W["lint"].append("no armor flagged equipped — best carried armor assumed; confirm worn kit")
+        _lint(W, "armor_not_equipped",
+              "no armor flagged equipped — best carried armor assumed; confirm worn kit",
+              ask="Which armour are you actually wearing right now?",
+              affects=["ac"])
     if len([i for i in body if i.get("equipped")]) > 1:
-        W["lint"].append("multiple body armors flagged equipped — using the first; confirm")
+        _lint(W, "multiple_armor_equipped",
+              "multiple body armors flagged equipped — using the first; confirm",
+              ask="You have more than one suit of armour marked worn — which one is on?",
+              affects=["ac"])
     unarmored = 10 + am["dex"]
     unarmored_prov = f"10 + DEX {am['dex']:+d}"
     for m in mods:
@@ -590,17 +671,20 @@ def build(d):
                  for r in rows if (r.get("used") or 0) > 0}
         if spent:
             detail = ", ".join(f"{n} spent at L{lv}" for lv, n in sorted(spent.items()))
-            W["lint"].append(
-                f"{label} inconsistent: every row reports a maximum of 0, yet "
-                f"{detail}. Slots that were spent must have existed — treat "
-                f"the maxima as unknown and confirm with the player.")
+            _lint(W, "slots_inconsistent",
+                  f"{label} inconsistent: every row reports a maximum of 0, yet "
+                  f"{detail}. Slots that were spent must have existed — treat "
+                  f"the maxima as unknown and confirm with the player.",
+                  ask="How many spell slots do you have in total, and how many are left?",
+                  affects=["spell_slots"])
         elif expectation:
             shape = ", ".join(f"{n}×L{i + 1}" for i, n in enumerate(expectation) if n)
-            W["lint"].append(
-                f"{label} missing: caster level {caster_level(classes)} "
-                f"requires {shape}, but every row reports 0 with nothing "
-                f"used — a data gap, not an expended caster. Ask the player "
-                f"to open the sheet, or treat slots as unknown.")
+            _lint(W, "slots_missing",
+                  f"{label} missing: caster level {caster_level(classes)} "
+                  f"requires {shape}, but every row reports 0 with nothing "
+                  f"used — a data gap, not an expended caster.",
+                  ask=f"Your sheet shows no spell slots, but a caster of your level should have {shape}. How many do you have?",
+                  affects=["spell_slots"])
 
     _slot_gap(_slot_rows(d, "spellSlots"), "spell slots", exp)
 
@@ -610,19 +694,22 @@ def build(d):
         pact = _slot_rows(d, "pactMagic")
         if pact and not any((r.get("available") or 0) > 0 for r in pact) \
                 and not any((r.get("used") or 0) > 0 for r in pact):
-            W["lint"].append(
-                "pact magic slots missing: this character has warlock levels "
-                "but every pactMagic row reports 0 with nothing used.")
+            _lint(W, "pact_slots_missing",
+                  "pact magic slots missing: this character has warlock levels "
+                  "but every pactMagic row reports 0 with nothing used.",
+                  ask="How many pact magic slots do you have, and how many are left?",
+                  affects=["spell_slots"])
 
     # ---- prepared spells: its own lane, and NOT gated on slots existing.
     #
     # Previously this only fired when slots were present, so a character with
     # missing slots got neither warning — the two failures hid each other.
     if spell and not prepared:
-        W["lint"].append(
-            "no prepared leveled spells visible — cantrips only. This may be "
-            "true, or the sheet may not have a prepared list set. Ask the "
-            "player before combat.")
+        _lint(W, "no_prepared_spells",
+              "no prepared leveled spells visible — cantrips only. This may be "
+              "true, or the sheet may not have a prepared list set.",
+              ask="Which leveled spells do you have prepared today?",
+              affects=["prepared_spells"])
 
     # ---- class resources (limitedUse actions)
     res = []
@@ -701,7 +788,7 @@ def derive(ref):
     d = fetch(ref)
     W = build(d)
     A, am = W["A"], W["am"]
-    return {
+    shaped = {
         "identity": {
             "name": d.get("name"),
             "classes": [f"{(c.get('definition') or {}).get('name')} {c.get('level')}"
@@ -756,10 +843,79 @@ def derive(ref):
         },
         "lint": W["lint"],
     }
+    # The trust map is a re-shaping of what is already above, put where an
+    # agent will actually look for it. See trust_map() for why it is not
+    # merely a convenience.
+    shaped["trust"] = trust_map(shaped["lint"], shaped["unhandled"])
+    return shaped
 
 
 STATE_FIELDS = {"removedHitPoints": "hp.current", "temporaryHitPoints": "hp.temp",
                 "inspiration": "heroic_inspiration"}
+
+
+def render_brief(r):
+    """Deterministic short output, for chat-sized surfaces.
+
+    From live agent UXR: *"Full JSON is right for machines, but humans in chat
+    need… Agents can summarize, but deterministic short output is better."*
+    Correct — a model-written summary can drift between runs, and this cannot.
+    """
+    ident = r.get("identity") or {}
+    t = r.get("trust") or {}
+    who = ident.get("name") or "character"
+    cls = ", ".join(ident.get("classes") or []) or "?"
+    lines = [f"{who} — {cls}"]
+
+    combat = r.get("combat") or {}
+    bits = []
+    ac = (combat.get("ac") or {}).get("value")
+    hp = combat.get("hp") or {}
+    if ac is not None:
+        bits.append(f"AC {ac}")
+    if hp.get("max") is not None:
+        bits.append(f"HP {hp.get('current', hp['max'])}/{hp['max']}")
+    init = (combat.get("initiative") or {}).get("bonus")
+    if init is not None:
+        bits.append(f"init {init:+d}")
+    if bits:
+        lines.append("  " + " · ".join(bits))
+
+    if t.get("trusted"):
+        lines.append("  trusted: " + ", ".join(t["trusted"]))
+    if t.get("ask_player"):
+        lines.append("  ASK: " + ", ".join(sorted(t["ask_player"])))
+    if t.get("unsupported"):
+        lines.append("  UNSUPPORTED: " + ", ".join(
+            f"{k} ({', '.join(v)})" for k, v in sorted(t["unsupported"].items())))
+    for a in (t.get("asks") or []):
+        lines.append(f"    ? {a['ask']}")
+    return "\n".join(lines)
+
+
+def intake(ref, for_dm=False):
+    """One pre-session packet: what is settled, and what must be asked first.
+
+    From live agent UXR: *"one pre-session packet for the DM/player to settle
+    before dice."* Deliberately a thin composition of the seat pack and the
+    trust map rather than a new subsystem — everything here already exists.
+    """
+    pack = seatpack(ref, for_dm=for_dm)
+    r = derive(ref)
+    t = r.get("trust") or {}
+    return {
+        "identity": pack.get("identity"),
+        "settled": {fam: True for fam in t.get("trusted", [])},
+        "resolve_before_dice": t.get("asks", []),
+        "unsupported": t.get("unsupported", {}),
+        "player_authority": ["current hp", "expended slots", "conditions",
+                             "concentration", "inspiration", "worn/carried kit"],
+        "baseline_snapshot_hint": (
+            "save this derive output as intake.json, then use "
+            "`charactercheck diff <ref> --baseline intake.json` mid-session to "
+            "see what the player changed"),
+        "seatpack": pack,
+    }
 
 
 def diff_payloads(old, new):
