@@ -64,6 +64,53 @@ BLAST_MAP = {
 }
 MAXIMAL = ["unknown — treat all derived values as unverified"]
 
+#: Prefix families for modifier subTypes we do not model individually but whose
+#: *target* is legible from the name. Matched longest-prefix-first.
+#:
+#: Added on UXR from an agent using this at a live table: a single unhandled
+#: `bonus:spell-group-healing` was collapsing the whole report to "treat all
+#: derived values as unverified", and the agent's objection was exactly right —
+#: *"too broad for play. I'd rather see 'affects healing spell output only', so
+#: I can still trust AC, saves, skills, HP."* A caveat that covers everything
+#: is worth the same as no caveat at all, because nobody can act on it.
+BLAST_PREFIXES = [
+    ("bonus:spell-group-", (["spell_output"], "bonus to a spell group's output")),
+    ("bonus:spell-", (["spellcasting"], "spellcasting bonus")),
+    ("bonus:skill-", (["skills"], "skill bonus")),
+    ("bonus:damage", (["attacks"], "damage bonus")),
+    ("bonus:attack", (["attacks"], "attack bonus")),
+    ("bonus:ac", (["ac"], "armor-class bonus")),
+    ("bonus:hp", (["hp"], "hit-point bonus")),
+    ("bonus:save", (["saves"], "saving-throw bonus")),
+]
+
+#: Every family the engine derives. Used to compute what an unhandled item
+#: provably did NOT touch.
+ALL_FAMILIES = ["ac", "initiative", "hp", "saves", "skills", "weapons",
+                "spellcasting", "spell_save_dc", "spell_attack_bonus",
+                "spell_output", "speeds", "proficiency_bonus", "attacks"]
+
+
+def blast(pat):
+    """What could this unhandled pattern plausibly affect, and what could it not?
+
+    Returns ``(affects, note)``. Exact map first, then prefix family, then a
+    last resort.
+
+    The last resort is deliberately *not* "distrust everything". An unhandled
+    modifier is **never applied** — that is what unhandled means — so every
+    derived number is exactly what it would be if the modifier did not exist.
+    The open question is only whether it *should* have been applied. Saying
+    "treat all values as unverified" overstates that into uselessness.
+    """
+    if pat in BLAST_MAP:
+        return BLAST_MAP[pat]
+    for prefix, val in sorted(BLAST_PREFIXES, key=lambda kv: -len(kv[0])):
+        if pat.startswith(prefix):
+            return val
+    return (["unknown"], "target not legible from the pattern name; it was "
+                         "not applied to any derived value")
+
 # modifier type:subType patterns the engine understands (everything else is
 # reported in `unhandled.modifiers` — the completeness contract)
 _SKILL_SET = set(SKILLS)
@@ -589,16 +636,14 @@ def derive(ref):
         "unhandled": {
             "items": [
                 {"pattern": pat,
-                 "possibly_affects": BLAST_MAP.get(pat, (MAXIMAL, None))[0],
-                 "note": BLAST_MAP.get(pat, (None, None))[1],
+                 "possibly_affects": blast(pat)[0],
+                 "note": blast(pat)[1],
+                 "not_applied": True,
                  "text": W.get("unhandled_text", {}).get(pat)}
                 for pat in W["unhandled_modifiers"]],
-            "verified_clean": ([] if any(
-                BLAST_MAP.get(p, (MAXIMAL, None))[0] == MAXIMAL
-                for p in W["unhandled_modifiers"])
-                else sorted({"ac", "initiative", "hp", "saves", "skills", "weapons"}
-                            - {a for p in W["unhandled_modifiers"]
-                               for a in BLAST_MAP.get(p, ([], None))[0]})),
+            "verified_clean": sorted(
+                set(ALL_FAMILIES)
+                - {a for p in W["unhandled_modifiers"] for a in blast(p)[0]}),
         },
         "lint": W["lint"],
     }

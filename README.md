@@ -15,6 +15,12 @@ $ pip install charactercheck                                   # stdlib only, no
 $ charactercheck derive https://www.dndbeyond.com/characters/<id>
 ```
 
+> **`pip install` blocked by an "externally-managed-environment" error?** That
+> is Homebrew/Debian Python protecting the system site-packages, not a problem
+> with this package. Use a venv — `python3 -m venv .venv && .venv/bin/pip
+> install charactercheck` — or skip installing entirely and use the clone path
+> below. There are no dependencies either way.
+
 **Cloned the repo instead of installing?** That works too, with no install step
 — there are no dependencies to install:
 

@@ -261,3 +261,102 @@ class TestLiveUserStory(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestContractSurfacesAgree(unittest.TestCase):
+    """Every place that states the contract must state the same contract.
+
+    From live UXR by an agent installing this cold: *"pyproject says 0.5.1,
+    tool.json says 0.1.0, server.json and MCP say 0.4.0. Agents will distrust
+    that. Small paper cut, but exactly the kind that makes tool installation
+    feel haunted."* Four versions in one repo is a trust defect, so agreement
+    is now enforced rather than remembered.
+    """
+
+    def setUp(self):
+        self.root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def _read(self, name):
+        with open(os.path.join(self.root, name)) as f:
+            return f.read()
+
+    def test_every_file_reports_the_same_version(self):
+        import re
+
+        import charactercheck
+        pkg = charactercheck.__version__
+        seen = {"package": pkg}
+
+        m = re.search(r'^version = "([^"]+)"', self._read("pyproject.toml"), re.M)
+        seen["pyproject.toml"] = m.group(1)
+        seen["tool.json"] = json.loads(self._read("tool.json"))["version"]
+
+        if os.path.exists(os.path.join(self.root, "server.json")):
+            found = []
+
+            def walk(o):
+                if isinstance(o, dict):
+                    for k, v in o.items():
+                        if k == "version" and isinstance(v, str):
+                            found.append(v)
+                        else:
+                            walk(v)
+                elif isinstance(o, list):
+                    for x in o:
+                        walk(x)
+            walk(json.loads(self._read("server.json")))
+            for i, v in enumerate(found):
+                seen[f"server.json[{i}]"] = v
+
+        self.assertEqual(len(set(seen.values())), 1,
+                         f"version disagreement across contract surfaces: {seen}")
+
+    def test_schema_documents_exit_3_and_the_error_kinds(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            main(["--schema"])
+        d = json.loads(buf.getvalue())
+        self.assertIn("3", d["exit_codes"])
+        kinds = set(d.get("errors", {}).get("kinds", []))
+        self.assertIn("not_public", kinds)
+        self.assertIn("bad_ref", kinds)
+
+    def test_tool_json_lists_every_cli_command(self):
+        import re
+        cli_src = self._read(os.path.join("charactercheck", "cli.py"))
+        choices = re.search(r"choices=\[([^\]]+)\]", cli_src).group(1)
+        commands = {c.strip().strip('"').strip("'") for c in choices.split(",")}
+        listed = " ".join(json.loads(self._read("tool.json"))["commands"])
+        for c in commands:
+            self.assertIn(c, listed, f"tool.json does not mention '{c}'")
+
+
+class TestBlastRadiusIsActionable(unittest.TestCase):
+    """A caveat that covers everything is worth the same as no caveat.
+
+    From live UXR: one unhandled `bonus:spell-group-healing` was collapsing the
+    whole report to "treat all derived values as unverified". The agent's
+    objection was right — it could no longer trust AC, saves, skills or HP,
+    none of which a healing-spell bonus can touch.
+    """
+
+    def test_a_known_family_prefix_scopes_narrowly(self):
+        from charactercheck.engine import blast
+        affects, note = blast("bonus:spell-group-healing")
+        self.assertEqual(affects, ["spell_output"])
+        self.assertNotIn("unverified", " ".join(affects))
+        self.assertTrue(note)
+
+    def test_an_unknown_pattern_no_longer_condemns_everything(self):
+        from charactercheck.engine import blast
+        affects, note = blast("munch:cookies")
+        self.assertNotIn("treat all derived values as unverified", affects)
+        self.assertIn("not applied", (note or "").lower())
+
+    def test_verified_clean_survives_a_narrow_unknown(self):
+        from charactercheck.engine import ALL_FAMILIES, blast
+        unhandled = ["bonus:spell-group-healing"]
+        clean = set(ALL_FAMILIES) - {a for p in unhandled for a in blast(p)[0]}
+        for family in ("ac", "saves", "skills", "hp"):
+            self.assertIn(family, clean,
+                          f"a healing-spell bonus must not invalidate {family}")

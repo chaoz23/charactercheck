@@ -4,6 +4,8 @@ Tools: derive, stance, qa, report — same engine as the CLI.
 Run: charactercheck-mcp  (or: python -m charactercheck.mcp)
 """
 import json
+
+from . import __version__
 import sys
 
 from . import derive, engine, qa
@@ -91,7 +93,7 @@ def main():
                 resp["result"] = {
                     "protocolVersion": req.get("params", {}).get("protocolVersion", "2024-11-05"),
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "charactercheck", "version": "0.4.0"}}
+                    "serverInfo": {"name": "charactercheck", "version": __version__}}
             elif method == "notifications/initialized":
                 continue
             elif method == "tools/list":

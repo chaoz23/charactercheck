@@ -18,7 +18,19 @@ SCHEMA = {
         "diff": "classify every delta between a baseline snapshot and the live sheet",
     },
     "input": "a public D&D Beyond character URL, id, or a saved character-service v5 JSON file",
-    "exit_codes": {"0": "derived clean", "1": "lint findings present", "2": "unhandled content present"},
+    "exit_codes": {
+        "0": "derived clean",
+        "1": "lint findings — the sheet disagrees with itself; output still usable",
+        "2": "unhandled content present — NOT a failure; output complete and usable",
+        "3": "could not retrieve the sheet — read the 'action' field in the JSON",
+    },
+    "errors": {
+        "note": ("Exit 3 prints structured JSON with a stable 'error' kind and a "
+                 "one-sentence 'action'. Never a traceback. charactercheck never "
+                 "asks for credentials."),
+        "kinds": ["not_public", "not_found", "bad_ref", "network",
+                  "rate_limited", "bad_json", "upstream"],
+    },
 }
 
 
@@ -31,6 +43,7 @@ def _exit_code(result):
 
 
 from . import errors
+from . import __version__
 
 
 def main(argv=None):
@@ -42,7 +55,7 @@ def main(argv=None):
     ap.add_argument("--pipe", action="store_true", help="read refs from stdin, one per line")
     ap.add_argument("--for-dm", action="store_true", help="seatpack: redact player-authority live state")
     ap.add_argument("--baseline", help="diff: the intake snapshot JSON to compare against")
-    ap.add_argument("--version", action="version", version="charactercheck 0.5.1")
+    ap.add_argument("--version", action="version", version=f"charactercheck {__version__}")
     ap.add_argument("--json", dest="json_out", action="store_true", help="doctor: machine-readable output")
     ap.add_argument("--schema", action="store_true", help="print the I/O contract and exit")
     a = ap.parse_args(argv)

@@ -1,13 +1,17 @@
 {
  "name": "charactercheck",
- "version": "0.1.0",
+ "version": "0.5.2",
  "description": "Deterministic D&D Beyond character-sheet derivation with provenance. Input: a public DDB character URL/id (or saved v5 JSON). Output: derived stats where every value carries its arithmetic, plus honest lanes: 'unhandled' (recognized-but-unmodeled data, named) and 'lint' (sheet inconsistencies).",
  "install": "pip install charactercheck  (or: uvx charactercheck ...)",
  "commands": {
-  "charactercheck derive <ref>": "full derived character as JSON",
+  "charactercheck derive <ref>": "full derived character as JSON (the main entry point)",
   "charactercheck stance <ref>": "pre-combat: hands, AC states with costs, attack lines",
-  "charactercheck qa <ref> [--full]": "the 100-question QA pass",
+  "charactercheck seatpack <ref> [--for-dm]": "everything a seat needs before a session",
+  "charactercheck quiz <ref>": "settlement questions the GM asks aloud, with expected values",
+  "charactercheck diff <ref> --baseline <snapshot.json>": "what the player changed mid-session (state vs build vs impossible)",
   "charactercheck report <ref>": "unhandled + lint only — resolve these before play",
+  "charactercheck qa <ref> [--full]": "the 100-question QA pass",
+  "charactercheck doctor [ref] [--json]": "diagnose why it is not working: python, DNS, outbound HTTPS, and character reachability. PASS/FAIL per check with the remedy on the first failure. Exit 0 all-pass, 3 otherwise.",
   "charactercheck --schema": "machine-readable I/O contract"
  },
  "exit_codes": {
@@ -31,11 +35,6 @@
   ]
  },
  "boundaries": "Derivation and extraction only: no rules adjudication (see srdcheck), no auth/cookies (public sheets only), no VTT output, no homebrew content database. Unrecognized data is reported by name, never silently defaulted.",
- "invocation": {
-  "subcommands": {
-   "doctor [ref]": "Diagnose why it is not working: python, DNS, outbound HTTPS, and (with a ref) reachability of that character. Prints PASS/FAIL per check with the remedy on the first failure. --json for machine output. Exit 0 all-pass, 3 otherwise."
-  }
- },
  "errors": {
   "note": "Every failure prints structured JSON with a stable 'error' kind and a one-sentence 'action'. Never a traceback. charactercheck never asks for credentials: a private sheet is answered by making it public or by passing a saved character-service JSON file.",
   "kinds": [

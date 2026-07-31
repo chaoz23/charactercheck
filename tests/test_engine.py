@@ -115,11 +115,26 @@ if __name__ == "__main__":
 class TestV02BlastRadius(unittest.TestCase):
     """Cold probe 2026-07-24: 'unhandled names what, not which numbers.'"""
 
-    def test_unmapped_pattern_gets_maximal_radius(self):
+    def test_unmapped_pattern_is_named_but_no_longer_condemns_everything(self):
+        """Superseded 2026-07-31 by live UXR.
+
+        This used to assert that an unmapped pattern cleared NOTHING —
+        `verified_clean == []`. An agent using this at a table objected, and
+        was right: one unhandled `bonus:spell-group-healing` was collapsing the
+        report to "treat all derived values as unverified", so it could not
+        trust AC, saves, skills or HP either. A caveat that covers everything
+        is worth the same as no caveat at all.
+
+        The honest position is narrower: an unhandled modifier is **never
+        applied**, so no derived value read it. It is still named, and the
+        exit code still flips — the caller is told what to go and ask about,
+        not told to distrust arithmetic that provably did not consume it.
+        """
         r = derive(VEXA)   # planted munch:cookies
         item = [i for i in r["unhandled"]["items"] if i["pattern"] == "munch:cookies"][0]
         self.assertIn("unknown", item["possibly_affects"][0])
-        self.assertEqual(r["unhandled"]["verified_clean"], [])   # maximal → nothing cleared
+        self.assertTrue(item.get("not_applied"))
+        self.assertNotEqual(r["unhandled"]["verified_clean"], [])
 
     def test_clean_sheet_has_no_items(self):
         r = derive(TORVALD)
