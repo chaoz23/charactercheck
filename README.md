@@ -8,6 +8,9 @@ The D&D Beyond API returns *build data* — there is no computed AC, attack bonu
 >
 > **Status: 0.1 — young but real.** The derivation surface is the [100-question QA pass](#the-qa-pass) below, run in CI on synthetic fixtures. Unrecognized data is *reported, never silently defaulted* — that honesty contract is the product.
 
+> **Agent?** → **[AGENTS.md](AGENTS.md)** is written for you: the six things
+> that matter, in one page. Everything below is the same story with more prose.
+
 ## Start here (agent or human): 2 commands
 
 ```console
@@ -20,6 +23,22 @@ $ charactercheck derive https://www.dndbeyond.com/characters/<id>
 > with this package. Use a venv — `python3 -m venv .venv && .venv/bin/pip
 > install charactercheck` — or skip installing entirely and use the clone path
 > below. There are no dependencies either way.
+
+**First, prove it works — offline, no account, no character of your own:**
+
+```console
+$ charactercheck selftest
+  [PASS] name: 'Torvald Brightmantle'
+  [PASS] level: 3
+  [PASS] abilities derived
+  ...
+  offline derivation works — no network, no D&D Beyond account, no character of your own required.
+```
+
+That one command separates *"the tool is broken"* from *"I cannot reach that
+character"* — two failures that look identical from outside and are the two you
+will actually hit. There is a sample character in the box
+(`examples/sample-character.json`) you can derive directly too.
 
 **Cloned the repo instead of installing?** That works too, with no install step
 — there are no dependencies to install:

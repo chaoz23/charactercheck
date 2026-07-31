@@ -8,6 +8,14 @@ charactercheck. CLI: charactercheck derive|seatpack|stance|quiz|diff|report
 "what is this character's AC and why", "everything a seat needs at session
 start", "what changed on this sheet since intake".
 
+## Bootstrapping
+
+`charactercheck selftest` derives a bundled sample character offline and prints
+PASS/FAIL per check. Run it first: it proves the engine works without a network,
+a D&D Beyond account, or a character of your own, which isolates any remaining
+problem to access rather than to the tool. `AGENTS.md` at the repo root is the
+one-page agent guide.
+
 ## Failure contract (read this before filing anything)
 
 Exit codes: 0 derived clean · 1 lint findings · 2 unhandled content (NOT a

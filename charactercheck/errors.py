@@ -202,3 +202,71 @@ def render_doctor(result):
     lines.append("")
     lines.append("  " + result["summary"])
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# selftest
+# ---------------------------------------------------------------------------
+
+#: Values derived from the bundled sample character. Pinned so that "is the
+#: tool working?" is answerable without a network, without a D&D Beyond
+#: account, and without a character of your own.
+#:
+#: This exists because those three things are the *other* failure modes, and an
+#: agent that cannot separate them is stuck: a 403 on someone's private sheet
+#: and a broken install look identical from the outside.
+SELFTEST_EXPECT = {
+    "name": "Torvald Brightmantle",
+    "level": 3,
+}
+
+
+def selftest():
+    """Derive the bundled sample character and check known values.
+
+    Returns ``(ok, lines)``. Deliberately offline: the sample ships in the
+    package, so a pass proves the derivation engine works and isolates any
+    remaining problem to network or character access.
+    """
+    import os
+
+    from . import engine
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(here, "sample-character.json"),
+        os.path.join(os.path.dirname(here), "examples", "sample-character.json"),
+        os.path.join(os.path.dirname(here), "tests", "fixtures", "torvald.json"),
+    ]
+    path = next((p for p in candidates if os.path.exists(p)), None)
+    if not path:
+        return False, ["[FAIL] sample character not found in this install"]
+
+    lines, ok = [], True
+    try:
+        r = engine.derive(path)
+    except Exception as e:  # noqa: BLE001 - a selftest reports anything
+        return False, [f"[FAIL] derivation raised: {e!r}",
+                       "       -> please open an issue with this line"]
+
+    got_name = (r.get("identity") or {}).get("name")
+    got_level = (r.get("identity") or {}).get("level")
+    for label, got, want in (("name", got_name, SELFTEST_EXPECT["name"]),
+                             ("level", got_level, SELFTEST_EXPECT["level"])):
+        good = got == want
+        ok = ok and good
+        lines.append(f"  [{'PASS' if good else 'FAIL'}] {label}: {got!r}"
+                     + ("" if good else f" (expected {want!r})"))
+
+    for family in ("abilities", "saves", "skills", "combat"):
+        present = bool(r.get(family))
+        ok = ok and present
+        lines.append(f"  [{'PASS' if present else 'FAIL'}] {family} derived")
+
+    lines.append("")
+    lines.append("  offline derivation works — no network, no D&D Beyond "
+                 "account, no character of your own required."
+                 if ok else
+                 "  the engine itself is failing; this is not a network or "
+                 "permissions problem.")
+    return ok, lines

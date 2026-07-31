@@ -453,3 +453,49 @@ class TestSpellLintsAgainstRealCharacters(unittest.TestCase):
 
     def test_a_caster_with_prepared_spells_is_not_nagged(self):
         self.assertNotIn("no prepared leveled spells", self._lint("93177801"))
+
+
+class TestBootstrapWithoutTheWorld(unittest.TestCase):
+    """An agent must be able to prove the tool works before it has a
+    character, an account, or a network.
+
+    Those are three separate things that fail separately, and from the outside
+    a broken install and a private sheet look identical. `selftest` collapses
+    that ambiguity to a binary answer.
+    """
+
+    def test_selftest_passes_offline(self):
+        with mock.patch("urllib.request.urlopen",
+                        side_effect=AssertionError("selftest must not hit the network")):
+            ok, lines = errors.selftest()
+        self.assertTrue(ok, "\n".join(lines))
+
+    def test_selftest_exits_zero_through_the_cli(self):
+        code, out = run(["selftest"])
+        self.assertEqual(code, 0)
+        self.assertIn("PASS", out)
+
+    def test_selftest_says_plainly_it_needs_nothing_external(self):
+        _ok, lines = errors.selftest()
+        text = "\n".join(lines).lower()
+        self.assertIn("no network", text)
+
+    def test_a_sample_character_ships_with_the_package(self):
+        import charactercheck
+        pkg = os.path.dirname(os.path.abspath(charactercheck.__file__))
+        repo = os.path.dirname(pkg)
+        self.assertTrue(
+            os.path.exists(os.path.join(pkg, "sample-character.json"))
+            or os.path.exists(os.path.join(repo, "examples", "sample-character.json")),
+            "an agent with no character of its own must still have one to try")
+
+    def test_agents_md_exists_and_leads_with_selftest(self):
+        repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(repo, "AGENTS.md")
+        self.assertTrue(os.path.exists(path), "AGENTS.md is the agent entry point")
+        with open(path) as f:
+            text = f.read()
+        self.assertIn("selftest", text)
+        self.assertIn("exit", text.lower())
+        # the mistake we most need to pre-empt
+        self.assertIn("treating exit 2 as failure", text)

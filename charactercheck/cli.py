@@ -49,7 +49,7 @@ from . import __version__
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="charactercheck", description=__doc__)
     ap.add_argument("command", nargs="?",
-                    choices=["derive", "stance", "qa", "report", "diff", "quiz", "seatpack", "doctor"], default="derive")
+                    choices=["derive", "stance", "qa", "report", "diff", "quiz", "seatpack", "doctor", "selftest"], default="derive")
     ap.add_argument("ref", nargs="?", help="DDB character URL / id / JSON file")
     ap.add_argument("--full", action="store_true", help="qa: print all 100 rows")
     ap.add_argument("--pipe", action="store_true", help="read refs from stdin, one per line")
@@ -63,6 +63,11 @@ def main(argv=None):
     if a.schema:
         print(json.dumps(SCHEMA, indent=1))
         return 0
+    if a.command == "selftest":
+        ok, lines = errors.selftest()
+        print("\n".join(lines))
+        return 0 if ok else 1
+
     if a.command == "doctor":
         res = errors.doctor(a.ref)
         print(errors.render_doctor(res) if not a.json_out else json.dumps(res, indent=1))
