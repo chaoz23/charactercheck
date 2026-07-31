@@ -325,4 +325,38 @@ class TestWorkedExampleIsAdvertised(unittest.TestCase):
         t = engine.derive(self.REF)["trust"]
         self.assertTrue(t["trusted"], "example lost its trusted lane")
         self.assertTrue(t["ask_player"], "example lost its ask_player lane")
-        self.assertTrue(t["unsupported"], "example lost its unsupported lane")
+        self.assertTrue(
+            t["unsupported"],
+            "example lost its unsupported lane — most likely its non-SRD feat "
+            "was removed from the sheet. That feat is load-bearing for this "
+            "example: see test_the_negative_case_is_still_present.")
+
+    @needs_net
+    def test_the_negative_case_is_still_present(self):
+        """The example carries one non-SRD feat ON PURPOSE.
+
+        Documented as expected across the README, AGENTS.md, llms.txt and
+        tool.json. A tidy all-SRD character would only ever demonstrate the
+        happy path, and real sheets are full of homebrew, legacy options and
+        manual overrides. This asserts the cause rather than only the effect,
+        so if someone 'cleans up' the sheet the failure names what was lost.
+        """
+        feats = engine.derive(self.REF)["feats_identified"]
+        outside = [f["name"] for f in feats
+                   if "outside SRD" in (f.get("category") or "")]
+        self.assertTrue(
+            outside,
+            "the worked example no longer has any non-SRD content, so it can "
+            "no longer demonstrate the unsupported lane. Either restore it or "
+            "update the docs that call it a deliberate negative case.")
+
+    def test_the_negative_case_is_documented_as_expected(self):
+        """If it is not documented, the next reader files it as a bug."""
+        for rel in ("README.md", "AGENTS.md", "llms.txt", "tool.json"):
+            with open(os.path.join(self._root(), rel)) as f:
+                text = f.read().lower()
+            self.assertTrue(
+                "negative case" in text or "not** in the srd" in text
+                or "outside the srd" in text,
+                f"{rel} does not explain that the example's non-SRD content is "
+                "deliberate")

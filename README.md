@@ -45,6 +45,20 @@ armour not flagged equipped, spell slots missing from the payload, no prepared
 list, and one unsupported healing-group modifier. A clean character would show
 you nothing.
 
+> **The example deliberately includes a negative case.** Shalia carries one
+> homebrew feat (`Dark Bargain`) that is **not** in the SRD 5.2.1 feat table,
+> and that is the point — it is what produces the `unsupported` lane in the
+> output above. A tidy all-SRD character would demonstrate the happy path and
+> nothing else, whereas real sheets are full of homebrew, legacy options and
+> manual overrides. This one shows the honesty machinery doing its actual job:
+> naming content it does not model, scoping the blast radius to
+> `spell_output`, and leaving the other twelve families trustworthy.
+>
+> charactercheck categorises it as *"outside SRD 5.2.1 feat table"*; the
+> sibling [srdcheck](https://github.com/chaoz23/srdcheck) independently refuses
+> it as out of jurisdiction. Two tools agreeing from different directions.
+
+
 **First, prove it works — offline, no account, no character of your own:**
 
 ```console

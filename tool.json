@@ -1,6 +1,6 @@
 {
  "name": "charactercheck",
- "version": "0.6.1",
+ "version": "0.6.2",
  "description": "Deterministic D&D Beyond character-sheet derivation with provenance. Input: a public DDB character URL/id (or saved v5 JSON). Output: derived stats where every value carries its arithmetic, plus honest lanes: 'unhandled' (recognized-but-unmodeled data, named) and 'lint' (sheet inconsistencies).",
  "install": "pip install charactercheck  (or: uvx charactercheck ...)",
  "commands": {
@@ -61,6 +61,7 @@
  },
  "example_character": {
   "ref": "https://www.dndbeyond.com/characters/150991647",
-  "note": "Public, and kept public as this project's worked example. Exercises all three trust lanes at once — armour not flagged equipped, spell slots absent from the payload, no prepared list, one unsupported healing-group modifier. Use it to see the whole contract in one call."
+  "note": "Public, and kept public as this project's worked example. Exercises all three trust lanes at once — armour not flagged equipped, spell slots absent from the payload, no prepared list, one unsupported healing-group modifier. Use it to see the whole contract in one call.",
+  "negative_case": "DELIBERATE AND EXPECTED: this character carries one homebrew feat ('Dark Bargain') outside the SRD 5.2.1 feat table, which is what produces the `unsupported` lane. Do not treat it as a defect in the example — it is what makes the example demonstrate the honesty machinery rather than just the happy path. Tests assert the negative case is still present."
  }
 }
