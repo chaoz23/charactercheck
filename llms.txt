@@ -8,6 +8,14 @@ charactercheck. CLI: charactercheck derive|seatpack|stance|quiz|diff|report
 "what is this character's AC and why", "everything a seat needs at session
 start", "what changed on this sheet since intake".
 
+## A live example
+
+https://www.dndbeyond.com/characters/150991647 is a public D&D Beyond character kept public as this project's worked
+example. It deliberately exercises all three trust lanes at once (armour not
+flagged equipped, spell slots absent from the payload, no prepared list, one
+unsupported healing-group modifier), so `derive <ref> --brief` on it shows the
+whole contract in eight lines.
+
 ## Bootstrapping
 
 `charactercheck selftest` derives a bundled sample character offline and prints

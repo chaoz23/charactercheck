@@ -13,6 +13,9 @@ SCHEMA = {
         "stance": "pre-combat block: hands, AC states with costs, attack lines",
         "qa": "run the 100-question QA pass (--full for all rows)",
         "report": "unhandled + lint only — what a table must resolve before play",
+  "intake": "one pre-session packet: settled families, the questions to resolve before dice, unsupported content, player-authority fields, baseline-snapshot hint",
+  "doctor": "diagnose python / DNS / outbound HTTPS / character reachability; remedy on the first failing check",
+  "selftest": "prove the engine works offline against a bundled sample — no network, no account, no character required",
         "seatpack": "everything a seat needs at session start: stats, saves, skills, passives, DCs, features, vision, verbatim persona (--for-dm redacts player-authority state)",
         "quiz": "settlement quiz: questions to ask out loud + the silent answer key (player-authority fields stay null)",
         "diff": "classify every delta between a baseline snapshot and the live sheet",
@@ -77,6 +80,13 @@ def main(argv=None):
     refs = [l.strip() for l in sys.stdin if l.strip()] if a.pipe else [a.ref]
     if not refs or refs == [None]:
         ap.error("a character ref is required (or --pipe/--schema)")
+    if a.brief and a.command not in ("derive", "report"):
+        print(json.dumps({"ok": False, "error": "bad_flag",
+                          "message": f"--brief is not supported by '{a.command}'.",
+                          "action": "Use --brief with `derive` or `report`, or drop it.",
+                          "exit_code": 2}, indent=1), file=sys.stderr)
+        return 2
+
     code = 0
     for ref in refs:
       try:
@@ -106,6 +116,10 @@ def main(argv=None):
               print(json.dumps(engine.quiz(ref), indent=1))
           elif a.command == "report":
               r = derive(ref)
+              if a.brief:
+                  print(engine.render_report_brief(r))
+                  code = max(code, _exit_code(r))
+                  continue
               out = {"unhandled": r["unhandled"], "lint": r["lint"],
                      "feats_identified": r["feats_identified"],
                      "stashed_elsewhere": r["inventory"]["stashed_elsewhere"]}

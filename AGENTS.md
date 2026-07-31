@@ -20,7 +20,15 @@ python3 -m charactercheck derive https://www.dndbeyond.com/characters/<id>
 ```
 
 Also accepts a bare id, or a path to a saved character-service JSON file. If
-you have no character to hand, there is one in the box:
+you want a real one to try, this character is public and kept that way as this
+project's worked example — she exercises all three trust lanes at once, so the
+output is worth reading:
+
+```bash
+python3 -m charactercheck derive https://www.dndbeyond.com/characters/150991647 --brief
+```
+
+And if you would rather not touch the network, there is one in the box:
 
 ```bash
 python3 -m charactercheck derive examples/sample-character.json

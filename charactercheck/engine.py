@@ -837,6 +837,14 @@ def derive(ref):
                  "not_applied": True,
                  "text": W.get("unhandled_text", {}).get(pat)}
                 for pat in W["unhandled_modifiers"]],
+            # NB: this answers only "which families did the UNSUPPORTED content
+            # not touch". It is deliberately blind to lint, so a family can be
+            # listed here and still be in trust.ask_player — Shalia's AC is
+            # exactly that: no unsupported modifier reaches it, but her armour
+            # is not flagged equipped. `trust` is the authoritative routing;
+            # this field is an input to it, not a verdict.
+            "verified_clean_note": ("families untouched by UNSUPPORTED content only — "
+                                    "this ignores lint. Use `trust` for routing."),
             "verified_clean": sorted(
                 set(ALL_FAMILIES)
                 - {a for p in W["unhandled_modifiers"] for a in blast(p)[0]}),
@@ -868,16 +876,28 @@ def render_brief(r):
     lines = [f"{who} — {cls}"]
 
     combat = r.get("combat") or {}
+    ask = set((t.get("ask_player") or {})) | set((t.get("unsupported") or {}))
+
+    def mark(family, text):
+        """Headline numbers are sticky under turn pressure.
+
+        From live agent UXR: *"`AC 12` appears in the headline, then `ASK: ac`
+        below. That's okay, but I'd prefer `AC 12 (confirm)`… under turn
+        pressure, headline numbers are sticky."* Right — a reader takes the
+        first number and stops, so the doubt has to travel with it.
+        """
+        return f"{text} (confirm)" if family in ask else text
+
     bits = []
     ac = (combat.get("ac") or {}).get("value")
     hp = combat.get("hp") or {}
     if ac is not None:
-        bits.append(f"AC {ac}")
+        bits.append(mark("ac", f"AC {ac}"))
     if hp.get("max") is not None:
-        bits.append(f"HP {hp.get('current', hp['max'])}/{hp['max']}")
+        bits.append(mark("hp", f"HP {hp.get('current', hp['max'])}/{hp['max']}"))
     init = (combat.get("initiative") or {}).get("bonus")
     if init is not None:
-        bits.append(f"init {init:+d}")
+        bits.append(mark("initiative", f"init {init:+d}"))
     if bits:
         lines.append("  " + " · ".join(bits))
 
@@ -890,6 +910,29 @@ def render_brief(r):
             f"{k} ({', '.join(v)})" for k, v in sorted(t["unsupported"].items())))
     for a in (t.get("asks") or []):
         lines.append(f"    ? {a['ask']}")
+    return "\n".join(lines)
+
+
+def render_report_brief(r):
+    """Caveat-only summary, chat-sized.
+
+    From live agent UXR: *"`report --brief` returns full JSON. Either reject it
+    clearly or make report brief produce the caveat-only Discord summary.
+    Silent ignore is the rough edge."* Silently ignoring a flag is the worst of
+    the three options — the caller believes it worked.
+    """
+    t = r.get("trust") or {}
+    ident = r.get("identity") or {}
+    lines = [f"{ident.get('name') or 'character'} — what to resolve before play"]
+    if not t.get("ask_player") and not t.get("unsupported"):
+        lines.append("  nothing outstanding — everything derived clean")
+        return "\n".join(lines)
+    for fam, pats in sorted((t.get("unsupported") or {}).items()):
+        lines.append(f"  UNSUPPORTED {fam}: {', '.join(pats)} — say what is "
+                     "missing rather than stating a value")
+    for a in (t.get("asks") or []):
+        fams = ", ".join(a.get("affects") or []) or "?"
+        lines.append(f"  ASK ({fams}): {a['ask']}")
     return "\n".join(lines)
 
 

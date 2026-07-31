@@ -6,6 +6,7 @@ Run: charactercheck-mcp  (or: python -m charactercheck.mcp)
 import json
 
 from . import __version__
+from . import errors
 import sys
 
 from . import derive, engine, qa
@@ -49,10 +50,40 @@ TOOLS = [
         "what a table must resolve before play.",
      "inputSchema": {"type": "object", "properties": {
          "ref": {"type": "string"}}, "required": ["ref"]}},
+    {"name": "intake", "description":
+        "One pre-session packet: which stat families are settled, the exact questions to "
+        "resolve before dice (each with the family it unblocks), unsupported content, the "
+        "fields that are the player's to declare, and a baseline-snapshot hint. Probably the "
+        "most useful single call for an agent taking a seat.",
+     "inputSchema": {"type": "object", "properties": {
+         "ref": {"type": "string"},
+         "for_dm": {"type": "boolean",
+                    "description": "redact player-authority live state"}},
+         "required": ["ref"]}},
+    {"name": "selftest", "description":
+        "Prove the engine works offline against a bundled sample character — no network, no "
+        "D&D Beyond account, no character required. Run this first when bootstrapping: it "
+        "separates 'the tool is broken' from 'I cannot reach that character'.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "doctor", "description":
+        "Diagnose why it is not working: python, DNS, outbound HTTPS, and (with a ref) "
+        "reachability of that character. Each check reports PASS/FAIL and the first failure "
+        "carries the remedy.",
+     "inputSchema": {"type": "object", "properties": {"ref": {"type": "string"}}}},
 ]
 
 
 def _call(name, args):
+    # These three are the bootstrap surface and do not all require a ref, so
+    # they are handled before the ref lookup that every other tool needs.
+    if name == "selftest":
+        ok, lines = errors.selftest()
+        return {"ok": ok, "report": "\n".join(lines)}
+    if name == "doctor":
+        return errors.doctor(args.get("ref"))
+    if name == "intake":
+        return engine.intake(args["ref"], for_dm=bool(args.get("for_dm")))
+
     ref = args["ref"]
     if name == "derive":
         return derive(ref)

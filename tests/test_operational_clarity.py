@@ -209,3 +209,120 @@ class TestAgainstLiveSheets(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSecondRoundUXR(unittest.TestCase):
+    """Five nits filed after the agent pulled and tested 0.6.0.
+
+    It also correctly diagnosed that no newer version existed — 'either the
+    newer push hasn't hit GitHub/PyPI yet, or this is the same 0.6.0 I already
+    tested.' It was the latter. Worth recording: the agent's read of the
+    release state was right and mine was the one that needed checking.
+    """
+
+    def test_mcp_exposes_intake(self):
+        """*"For agents, intake is probably the most valuable new surface."*"""
+        from charactercheck import mcp
+        self.assertIn("intake", [t["name"] for t in mcp.TOOLS])
+
+    def test_mcp_exposes_the_bootstrap_pair(self):
+        from charactercheck import mcp
+        names = [t["name"] for t in mcp.TOOLS]
+        self.assertIn("selftest", names)
+        self.assertIn("doctor", names)
+
+    def test_mcp_bootstrap_tools_do_not_require_a_ref(self):
+        from charactercheck import mcp
+        for t in mcp.TOOLS:
+            if t["name"] in ("selftest", "doctor"):
+                self.assertNotIn("required", t["inputSchema"],
+                                 f"{t['name']} must work with no character")
+
+    def test_mcp_intake_dispatches(self):
+        from charactercheck import mcp
+        out = mcp._call("intake", {"ref": TORVALD})
+        self.assertIn("resolve_before_dice", out)
+
+    def test_schema_lists_every_cli_command(self):
+        """*"this is exactly where agents look for contract truth."*"""
+        import re
+        from charactercheck.cli import SCHEMA
+        src = open(os.path.join(os.path.dirname(FIX), "..", "charactercheck",
+                                "cli.py")).read()
+        choices = re.search(r"choices=\[([^\]]+)\]", src).group(1)
+        for c in (x.strip().strip('"').strip("'") for x in choices.split(",")):
+            self.assertIn(c, SCHEMA["commands"], f"--schema omits '{c}'")
+
+    def test_report_brief_produces_a_caveat_summary(self):
+        code, out = run(["report", VEXA, "--brief"])
+        self.assertIn(code, (0, 1, 2))
+        self.assertNotIn("{", out.splitlines()[0])
+        self.assertIn("resolve before play", out)
+
+    def test_brief_on_an_unsupported_command_is_refused_not_ignored(self):
+        """Silently ignoring a flag is worse than rejecting it: the caller
+        believes it worked."""
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = main(["stance", TORVALD, "--brief"])
+        self.assertEqual(code, 2)
+
+    def test_headline_numbers_carry_their_doubt(self):
+        """*"under turn pressure, headline numbers are sticky."*"""
+        r = engine.derive(VEXA)
+        text = engine.render_brief(r)
+        head = text.splitlines()[1] if len(text.splitlines()) > 1 else ""
+        for fam, label in (("ac", "AC"), ("hp", "HP")):
+            if fam in (r["trust"].get("ask_player") or {}) and label in head:
+                self.assertIn("(confirm)", head,
+                              f"{label} is in ask_player but the headline does not say so")
+
+    def test_verified_clean_says_it_is_not_the_routing(self):
+        """A family can be verified_clean AND in ask_player — Shalia's AC is.
+        The payload must say which one is authoritative."""
+        r = engine.derive(VEXA)
+        note = (r["unhandled"].get("verified_clean_note") or "").lower()
+        self.assertIn("trust", note)
+        self.assertIn("lint", note)
+
+
+@needs_net
+class TestSecondRoundAgainstShalia(unittest.TestCase):
+    def test_shalia_headline_flags_ac_for_confirmation(self):
+        text = engine.render_brief(engine.derive("150991647"))
+        self.assertIn("AC 12 (confirm)", text)
+
+    def test_shalia_report_brief_lists_all_three_questions(self):
+        text = engine.render_report_brief(engine.derive("150991647"))
+        self.assertEqual(text.count("ASK ("), 3)
+        self.assertIn("UNSUPPORTED spell_output", text)
+
+
+class TestWorkedExampleIsAdvertised(unittest.TestCase):
+    """A live public character beats a `<id>` placeholder: an agent can run it
+    immediately, and this one exercises all three trust lanes at once."""
+
+    REF = "150991647"
+
+    def _root(self):
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def test_every_agent_facing_surface_names_it(self):
+        for rel in ("README.md", "AGENTS.md", "llms.txt", "tool.json"):
+            with open(os.path.join(self._root(), rel)) as f:
+                self.assertIn(self.REF, f.read(), f"{rel} omits the worked example")
+
+    @needs_net
+    def test_the_advertised_example_still_derives(self):
+        """If the sheet ever goes private, this fails loudly rather than
+        leaving a dead example in the README."""
+        code, out = run(["derive", self.REF, "--brief"])
+        self.assertIn(code, (0, 1, 2), out)
+        self.assertIn("Shalia", out)
+
+    @needs_net
+    def test_the_example_still_shows_all_three_lanes(self):
+        t = engine.derive(self.REF)["trust"]
+        self.assertTrue(t["trusted"], "example lost its trusted lane")
+        self.assertTrue(t["ask_player"], "example lost its ask_player lane")
+        self.assertTrue(t["unsupported"], "example lost its unsupported lane")

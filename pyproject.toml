@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "charactercheck"
-version = "0.6.0"
+version = "0.6.1"
 description = "Deterministic D&D Beyond character-sheet derivation with provenance — every stat computed and traceable, every unhandled case named, never guessed."
 readme = "README.md"
 license = {text = "MIT"}

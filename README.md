@@ -24,6 +24,27 @@ $ charactercheck derive https://www.dndbeyond.com/characters/<id>
 > install charactercheck` — or skip installing entirely and use the clone path
 > below. There are no dependencies either way.
 
+**Want a real character to try right now?** This one is public and kept that
+way on purpose:
+
+```console
+$ charactercheck derive https://www.dndbeyond.com/characters/150991647 --brief
+Shalia — Cleric 3
+  AC 12 (confirm) · HP 21/21 · init -1
+  trusted: hp, initiative, saves, skills, attacks, weapons, speeds, proficiency_bonus, spellcasting, spell_save_dc, spell_attack_bonus, inventory
+  ASK: ac, prepared_spells, spell_slots
+  UNSUPPORTED: spell_output (bonus:spell-group-healing)
+    ? Which armour are you actually wearing right now?
+    ? Your sheet shows no spell slots, but a caster of your level should have 4×L1, 2×L2. How many do you have?
+    ? Which leveled spells do you have prepared today?
+```
+
+She is a deliberately *useful* example rather than a tidy one: a real sheet
+from a running campaign that exercises **all three trust lanes at once** —
+armour not flagged equipped, spell slots missing from the payload, no prepared
+list, and one unsupported healing-group modifier. A clean character would show
+you nothing.
+
 **First, prove it works — offline, no account, no character of your own:**
 
 ```console
