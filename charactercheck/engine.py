@@ -185,6 +185,51 @@ def _mod(score):
     return (score - 10) // 2
 
 
+#: The SRD multiclass spellcaster table: caster level -> slots per spell level.
+#: This is the *independent anchor* for the completeness check below. A
+#: character's class levels imply how many slots must exist; if the payload
+#: reports none, the payload is wrong, not the rules.
+SLOT_TABLE = {
+    1: [2], 2: [3], 3: [4, 2], 4: [4, 3], 5: [4, 3, 2], 6: [4, 3, 3],
+    7: [4, 3, 3, 1], 8: [4, 3, 3, 2], 9: [4, 3, 3, 3, 1], 10: [4, 3, 3, 3, 2],
+    11: [4, 3, 3, 3, 2, 1], 12: [4, 3, 3, 3, 2, 1],
+    13: [4, 3, 3, 3, 2, 1, 1], 14: [4, 3, 3, 3, 2, 1, 1],
+    15: [4, 3, 3, 3, 2, 1, 1, 1], 16: [4, 3, 3, 3, 2, 1, 1, 1],
+    17: [4, 3, 3, 3, 2, 1, 1, 1, 1], 18: [4, 3, 3, 3, 3, 1, 1, 1, 1],
+    19: [4, 3, 3, 3, 3, 2, 1, 1, 1], 20: [4, 3, 3, 3, 3, 2, 2, 1, 1],
+}
+FULL_CASTERS = {"bard", "cleric", "druid", "sorcerer", "wizard"}
+HALF_CASTERS = {"paladin", "ranger"}          # slots begin at class level 2
+PACT_CASTERS = {"warlock"}                    # pact magic, counted separately
+
+
+def caster_level(classes):
+    """Effective spellcaster level for the multiclass slot table.
+
+    Warlocks are excluded on purpose: pact magic is its own progression and
+    does not combine with the table (SRD multiclassing).
+    """
+    lvl = 0
+    for c in classes or []:
+        name = ((c.get("definition") or {}).get("name") or "").strip().lower()
+        n = c.get("level") or 0
+        if name in FULL_CASTERS:
+            lvl += n
+        elif name in HALF_CASTERS:
+            lvl += n // 2
+    return lvl
+
+
+def expected_slots(classes):
+    """Slots a character of these classes must have, per the SRD table."""
+    return SLOT_TABLE.get(caster_level(classes))
+
+
+def _slot_rows(d, key):
+    return [r for r in (d.get(key) or []) if isinstance(r, dict)]
+
+
+
 def build(d):
     """Derive everything once. Returns the raw derivation workspace (dict).
 
@@ -512,8 +557,72 @@ def build(d):
             slots_cur[f"pact{s['level']}"] = s["available"] - s.get("used", 0)
     W.update(spell=spell, cantrips=cantrips, prepared=prepared,
              slots=slots, slots_cur=slots_cur)
-    if spell and not prepared and slots:
-        W["lint"].append("caster with slots but zero prepared leveled spells — confirm the prepared list")
+    # ---- completeness oracle: do the slots the rules require actually exist?
+    #
+    # From live agent UXR: a Cleric 3 came back with slots_max {} because every
+    # DDB spellSlots row read available:0. That is not depletion — depletion
+    # shows as used>0. It is a payload that never populated the maxima, and a
+    # table cannot see the difference without an independent anchor. The class
+    # levels ARE that anchor (SLOT_TABLE above).
+    classes = d.get("classes") or []
+    exp = expected_slots(classes)
+
+    def _slot_gap(rows, label, expectation):
+        """Diagnose a slot block. Two failures hide behind one symptom.
+
+        `available` is the maximum and `used` is what has been spent, so:
+
+          * maxima present  -> fine, expended or not
+          * no maxima, nothing used -> the payload never populated them
+          * no maxima, but used > 0 -> the sheet contradicts itself: those
+            slots were spent, so they existed
+
+        The second case was reported by an agent (a Cleric 3 with slots_max
+        {}). The third turned up while testing the fix on a second character
+        and would have been swallowed by a coarser check — a Paladin/Warlock
+        with `available 0, used 3`.
+        """
+        if not rows:
+            return
+        if any((r.get("available") or 0) > 0 for r in rows):
+            return
+        spent = {r["level"]: r.get("used") or 0
+                 for r in rows if (r.get("used") or 0) > 0}
+        if spent:
+            detail = ", ".join(f"{n} spent at L{lv}" for lv, n in sorted(spent.items()))
+            W["lint"].append(
+                f"{label} inconsistent: every row reports a maximum of 0, yet "
+                f"{detail}. Slots that were spent must have existed — treat "
+                f"the maxima as unknown and confirm with the player.")
+        elif expectation:
+            shape = ", ".join(f"{n}×L{i + 1}" for i, n in enumerate(expectation) if n)
+            W["lint"].append(
+                f"{label} missing: caster level {caster_level(classes)} "
+                f"requires {shape}, but every row reports 0 with nothing "
+                f"used — a data gap, not an expended caster. Ask the player "
+                f"to open the sheet, or treat slots as unknown.")
+
+    _slot_gap(_slot_rows(d, "spellSlots"), "spell slots", exp)
+
+    if any(((c.get("definition") or {}).get("name") or "").lower() in PACT_CASTERS
+           for c in classes):
+        _slot_gap(_slot_rows(d, "pactMagic"), "pact magic slots", None)
+        pact = _slot_rows(d, "pactMagic")
+        if pact and not any((r.get("available") or 0) > 0 for r in pact) \
+                and not any((r.get("used") or 0) > 0 for r in pact):
+            W["lint"].append(
+                "pact magic slots missing: this character has warlock levels "
+                "but every pactMagic row reports 0 with nothing used.")
+
+    # ---- prepared spells: its own lane, and NOT gated on slots existing.
+    #
+    # Previously this only fired when slots were present, so a character with
+    # missing slots got neither warning — the two failures hid each other.
+    if spell and not prepared:
+        W["lint"].append(
+            "no prepared leveled spells visible — cantrips only. This may be "
+            "true, or the sheet may not have a prepared list set. Ask the "
+            "player before combat.")
 
     # ---- class resources (limitedUse actions)
     res = []

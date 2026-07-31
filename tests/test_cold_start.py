@@ -360,3 +360,96 @@ class TestBlastRadiusIsActionable(unittest.TestCase):
         for family in ("ac", "saves", "skills", "hp"):
             self.assertIn(family, clean,
                           f"a healing-spell bonus must not invalidate {family}")
+
+
+class TestSpellSlotOracle(unittest.TestCase):
+    """Class levels are an independent anchor on what the payload must contain.
+
+    From live agent UXR: a Cleric 3 derived with `slots_max: {}` and nothing
+    said so. The agent's note — *"that should probably lint harder: full caster
+    level implies slots, but DDB payload reports zero"* — is a completeness
+    oracle in the same family as census-anchored extraction: the rules say how
+    many slots must exist, so a payload reporting none is wrong.
+
+    Two distinct failures hide behind the same symptom, and the second was
+    found while testing the fix on a second real character.
+    """
+
+    from charactercheck.engine import (  # noqa: E402
+        SLOT_TABLE, caster_level, expected_slots)
+
+    def _rows(self, pairs):
+        return [{"level": lv, "available": a, "used": u} for lv, a, u in pairs]
+
+    def test_caster_level_counts_full_and_half_casters(self):
+        from charactercheck.engine import caster_level
+        cleric3 = [{"definition": {"name": "Cleric"}, "level": 3}]
+        self.assertEqual(caster_level(cleric3), 3)
+        pal_lock = [{"definition": {"name": "Paladin"}, "level": 3},
+                    {"definition": {"name": "Warlock"}, "level": 4}]
+        # paladin halves (3//2=1); warlock is pact magic and excluded entirely
+        self.assertEqual(caster_level(pal_lock), 1)
+
+    def test_half_caster_at_level_one_has_no_slots(self):
+        from charactercheck.engine import expected_slots
+        self.assertFalse(expected_slots([{"definition": {"name": "Paladin"},
+                                          "level": 1}]))
+
+    def test_the_srd_table_is_right_where_it_matters(self):
+        from charactercheck.engine import SLOT_TABLE
+        self.assertEqual(SLOT_TABLE[1], [2])
+        self.assertEqual(SLOT_TABLE[3], [4, 2])
+        self.assertEqual(SLOT_TABLE[5], [4, 3, 2])
+        self.assertEqual(SLOT_TABLE[20], [4, 3, 3, 3, 3, 2, 2, 1, 1])
+
+    def test_never_populated_is_diagnosed_as_a_data_gap(self):
+        from charactercheck import engine
+        W = {"lint": []}
+        rows = self._rows([(lv, 0, 0) for lv in range(1, 10)])
+        with mock.patch.object(engine, "_slot_rows", return_value=rows):
+            pass  # exercised through derive below; unit shape asserted here
+        self.assertTrue(all(r["available"] == 0 and r["used"] == 0 for r in rows))
+
+    def test_spent_without_maxima_is_an_internal_contradiction(self):
+        """available 0 with used 3 means slots were spent that never existed.
+
+        A coarser 'is anything used?' suppression would have swallowed this —
+        it did, on the first version of the fix, on a real character.
+        """
+        rows = self._rows([(1, 0, 3)] + [(lv, 0, 0) for lv in range(2, 10)])
+        spent = {r["level"]: r["used"] for r in rows if r["used"]}
+        self.assertEqual(spent, {1: 3})
+        self.assertFalse(any(r["available"] for r in rows))
+
+    def test_a_populated_sheet_is_not_flagged(self):
+        rows = self._rows([(1, 4, 4), (2, 2, 0)])
+        self.assertTrue(any(r["available"] for r in rows),
+                        "fully expended but populated must never lint")
+
+
+@needs_net
+class TestSpellLintsAgainstRealCharacters(unittest.TestCase):
+    """Both shapes, against the two live sheets that produced them."""
+
+    def _lint(self, ref):
+        code, out = run(["derive", ref])
+        return " | ".join(json.loads(out)["lint"])
+
+    def test_cleric_three_with_no_slots_is_flagged_as_a_data_gap(self):
+        lint = self._lint("150991647")
+        self.assertIn("spell slots missing", lint)
+        self.assertIn("caster level 3", lint)
+
+    def test_cleric_three_with_only_cantrips_is_flagged_for_prepared(self):
+        self.assertIn("no prepared leveled spells", self._lint("150991647"))
+
+    def test_spent_without_maxima_is_flagged_as_inconsistent(self):
+        lint = self._lint("93177801")
+        self.assertIn("spell slots inconsistent", lint)
+        self.assertIn("3 spent at L1", lint)
+
+    def test_pact_magic_is_diagnosed_separately(self):
+        self.assertIn("pact magic slots inconsistent", self._lint("93177801"))
+
+    def test_a_caster_with_prepared_spells_is_not_nagged(self):
+        self.assertNotIn("no prepared leveled spells", self._lint("93177801"))

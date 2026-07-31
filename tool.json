@@ -1,6 +1,6 @@
 {
  "name": "charactercheck",
- "version": "0.5.2",
+ "version": "0.5.3",
  "description": "Deterministic D&D Beyond character-sheet derivation with provenance. Input: a public DDB character URL/id (or saved v5 JSON). Output: derived stats where every value carries its arithmetic, plus honest lanes: 'unhandled' (recognized-but-unmodeled data, named) and 'lint' (sheet inconsistencies).",
  "install": "pip install charactercheck  (or: uvx charactercheck ...)",
  "commands": {

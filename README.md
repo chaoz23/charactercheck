@@ -131,7 +131,11 @@ A character sheet is a mix of derivable core-rules content and everything else �
 
 1. **Derived** values carry their arithmetic (`AC 17 = Breastplate 14 [equipped] + DEX +1 [medium cap] + 2 [manual adjustment]`).
 2. **Unhandled** data is surfaced by name (an unknown modifier pattern, an unrecognized characterValue type) and flips the exit code — your cue to ask the player, not to guess.
-3. **Lint** catches sheets that disagree with themselves: nothing flagged equipped, stale damage, a caster with slots and zero prepared spells, gear stashed in a container that was left somewhere else entirely (yes, the container graph is modeled — a chest labeled "stashed @ the docks" stops contributing weight and armor candidates).
+3. **Lint** catches sheets that disagree with themselves — including **slot
+   gaps caught by an independent anchor**: the SRD multiclass table says how
+   many slots a caster level *must* have, so a Cleric 3 reporting none is a
+   data gap, and a sheet reporting `available 0` while `used 3` is a
+   contradiction (those slots were spent, so they existed). Also: nothing flagged equipped, stale damage, a caster with slots and zero prepared spells, gear stashed in a container that was left somewhere else entirely (yes, the container graph is modeled — a chest labeled "stashed @ the docks" stops contributing weight and armor candidates).
 
 ## The QA pass
 
