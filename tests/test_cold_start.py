@@ -176,6 +176,37 @@ class TestDoctor(unittest.TestCase):
             self.assertTrue(net[0]["ok"])
 
 
+class TestCloneWithoutInstall(unittest.TestCase):
+    """Handed a GitHub URL, an agent clones rather than pip-installing. The
+    natural next move must then work without a guess.
+
+    Found by running the real user story against a real agent: it hit
+    "No module named charactercheck.__main__" and recovered by guessing
+    `-m charactercheck.cli`. It should not have had to guess.
+    """
+
+    def test_python_dash_m_package_is_executable(self):
+        import charactercheck
+        root = os.path.dirname(os.path.abspath(charactercheck.__file__))
+        self.assertTrue(os.path.exists(os.path.join(root, "__main__.py")),
+                        "python3 -m charactercheck must work from a clone")
+
+    def test_dash_m_entrypoint_calls_the_same_cli(self):
+        import runpy
+        with mock.patch("sys.argv", ["charactercheck", "derive", "notanumber"]):
+            with self.assertRaises(SystemExit) as cm:
+                with redirect_stdout(io.StringIO()):
+                    runpy.run_module("charactercheck", run_name="__main__")
+        self.assertEqual(cm.exception.code, errors.EXIT_FETCH)
+
+    def test_readme_documents_the_clone_path(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "README.md")) as f:
+            readme = f.read()
+        self.assertIn("python3 -m charactercheck", readme)
+        self.assertIn("git clone", readme)
+
+
 class TestReadmeContract(unittest.TestCase):
     """The user story is 'read the README and use it', so the README must
     actually carry the contract it promises."""

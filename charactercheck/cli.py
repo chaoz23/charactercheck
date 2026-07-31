@@ -42,7 +42,7 @@ def main(argv=None):
     ap.add_argument("--pipe", action="store_true", help="read refs from stdin, one per line")
     ap.add_argument("--for-dm", action="store_true", help="seatpack: redact player-authority live state")
     ap.add_argument("--baseline", help="diff: the intake snapshot JSON to compare against")
-    ap.add_argument("--version", action="version", version="charactercheck 0.5.0")
+    ap.add_argument("--version", action="version", version="charactercheck 0.5.1")
     ap.add_argument("--json", dest="json_out", action="store_true", help="doctor: machine-readable output")
     ap.add_argument("--schema", action="store_true", help="print the I/O contract and exit")
     a = ap.parse_args(argv)

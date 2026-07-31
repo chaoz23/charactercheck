@@ -15,6 +15,14 @@ $ pip install charactercheck                                   # stdlib only, no
 $ charactercheck derive https://www.dndbeyond.com/characters/<id>
 ```
 
+**Cloned the repo instead of installing?** That works too, with no install step
+— there are no dependencies to install:
+
+```console
+$ git clone https://github.com/chaoz23/charactercheck && cd charactercheck
+$ python3 -m charactercheck derive https://www.dndbeyond.com/characters/<id>
+```
+
 That is the whole happy path. Works on any **public** D&D Beyond character —
 URL, bare id, or a saved character-service JSON file. No login, no cookies, no
 API key, ever.
