@@ -8,10 +8,69 @@ The D&D Beyond API returns *build data* — there is no computed AC, attack bonu
 >
 > **Status: 0.1 — young but real.** The derivation surface is the [100-question QA pass](#the-qa-pass) below, run in CI on synthetic fixtures. Unrecognized data is *reported, never silently defaulted* — that honesty contract is the product.
 
-## 30 seconds to a derived character
+## Start here (agent or human): 2 commands
 
 ```console
-$ pip install charactercheck        # stdlib only, no dependencies
+$ pip install charactercheck                                   # stdlib only, no dependencies
+$ charactercheck derive https://www.dndbeyond.com/characters/<id>
+```
+
+That is the whole happy path. Works on any **public** D&D Beyond character —
+URL, bare id, or a saved character-service JSON file. No login, no cookies, no
+API key, ever.
+
+### If it does not work, read the exit code
+
+Every failure prints **structured JSON with an `action` field** — the one next
+thing to do. **Never a traceback.**
+
+| exit | meaning | what to do |
+|---|---|---|
+| **0** | derived clean | use the output |
+| **1** | lint findings — the sheet disagrees with itself | usable output; resolve `lint[]` with the player |
+| **2** | unhandled content present | **not a failure.** Output is complete and usable; resolve the named `unhandled` items with a human. Don't retry |
+| **3** | **could not retrieve the sheet** | read `action` in the JSON — private sheet, bad id, or no network |
+
+```console
+$ charactercheck derive https://www.dndbeyond.com/characters/1
+{
+ "ok": false,
+ "error": "not_public",
+ "message": "D&D Beyond returned 403 Forbidden for this character — it is private or not shared.",
+ "action": "Open the character on D&D Beyond, set Character Privacy to Public, and retry. If you cannot change it, save the character-service JSON and pass that file path instead — charactercheck reads a saved file with no permissions at all, and never asks for credentials.",
+ "exit_code": 3
+}
+```
+
+Error kinds are stable and matchable: `not_public` · `not_found` · `bad_ref` ·
+`network` · `rate_limited` · `bad_json` · `upstream`.
+
+### Stuck? One command diagnoses it
+
+```console
+$ charactercheck doctor <ref>          # add --json for machine output
+  [PASS] python: 3.12.1
+  [PASS] dns: character-service.dndbeyond.com resolves
+  [PASS] network: outbound HTTPS works
+  [FAIL] character: not_public: D&D Beyond returned 403 Forbidden ...
+         -> Open the character on D&D Beyond, set Character Privacy to Public ...
+```
+
+### Private character? Two supported answers
+
+charactercheck **never asks for credentials** — that is a deliberate boundary,
+not a gap. So:
+
+1. **Make it public.** Character sheet → *Character Privacy* → Public. This is
+   the usual answer and takes ten seconds.
+2. **Or work from a file.** Save the character-service JSON anywhere you can
+   read it and pass the path: `charactercheck derive ./shalia.json`. No
+   permissions involved at all — useful for private campaigns, air-gapped
+   hosts, and CI.
+
+## What a derived character looks like
+
+```console
 $ charactercheck derive https://www.dndbeyond.com/characters/<id>
 {
  "combat": {
@@ -28,25 +87,29 @@ $ charactercheck derive https://www.dndbeyond.com/characters/<id>
 }
 ```
 
-Works on any **public** D&D Beyond character (URL, bare id, or a saved character-service v5 JSON file). No login, no cookies, no API key — ever.
-
 ## For agents
 
 - **`tool.json`** at the repo root and **`charactercheck --schema`** describe the full I/O contract.
-- **Exit codes are the three honesty lanes:** `0` = derived clean · `1` = lint findings (the sheet looks inconsistent) · `2` = unhandled content present (data the engine recognizes as *there* but does not model — each pattern named in `unhandled` **with `possibly_affects` — exactly which derived numbers to double-check — and a `verified_clean` list of stat families the unknowns cannot touch** (0.2.0)). **⚠ Exit 2 is NOT a failure** — the derivation output is complete and usable; the nonzero code is your cue to *also* resolve the named unhandled items with a human. Don't retry.
 - **`--pipe`** reads refs from stdin for batch runs.
 - **MCP server**: `charactercheck-mcp` (stdio) exposes `derive`, `stance`, `qa`, `report`.
 - Every derived number carries a **provenance string** — the arithmetic that produced it — so a downstream agent (or a suspicious player) can audit any value without re-deriving it.
 
 ```console
 $ charactercheck stance <ref>    # what's in each hand, AC states with costs
+$ charactercheck seatpack <ref>  # everything a seat needs before a session
 $ charactercheck report <ref>    # ONLY the honesty lanes — resolve these before play
 $ charactercheck qa <ref>        # the 100-question pass, per-question OK/PARTIAL/NO
-$ charactercheck diff <ref> --baseline intake.json   # the sheet is a LIVE state store:
-                                 # classify what the player changed mid-session —
-                                 # state (engine's lane) vs build (mini-intake) vs
-                                 # impossible edits (equipping gear stashed elsewhere)
+$ charactercheck diff <ref> --baseline intake.json   # what the player changed mid-session
 ```
+
+> **Why this matters, from a real table:** an agent was handed a D&D Beyond
+> link and reported *"D&D Beyond is showing me the signed-out shell, not the
+> sheet stats"* — then played a whole session rolling flat d20s with no
+> modifiers, while the GM hand-derived her numbers and **got them wrong twice**
+> (a throwaway script matched `wis-score`; D&D Beyond calls it
+> `wisdom-score`, silently dropping a feat's +2 WIS). `charactercheck derive`
+> gets that sheet right in one command. Hand-derivation is the bug this product
+> exists to delete.
 
 ## Why provenance and refusal, not just numbers
 

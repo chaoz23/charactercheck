@@ -15,6 +15,7 @@ No network beyond the single public character fetch. No auth. No model calls.
 import json
 import os
 import re
+import urllib.error
 import urllib.request
 
 ABIL = {1: "str", 2: "dex", 3: "con", 4: "int", 5: "wis", 6: "cha"}
@@ -82,20 +83,55 @@ def _recognized(mtype, msub):
                      "protection", "vulnerability", "damage", "carrying-capacity")
 
 
+from . import errors  # noqa: E402  (after stdlib imports)
+
+
 def fetch(ref):
-    """Load a character: local JSON file path, bare id, or dndbeyond URL."""
+    """Load a character: local JSON file path, bare id, or dndbeyond URL.
+
+    Every failure here raises a typed :class:`~charactercheck.errors.
+    CharacterCheckError` carrying a one-sentence action. Nothing raw escapes:
+    a caller that gets a urllib traceback cannot act on it, and an agent that
+    gets one will either invent a workaround or open an issue. See
+    `charactercheck/errors.py` for the measurement that motivated this.
+    """
     if os.path.exists(ref):
-        d = json.load(open(ref))
+        try:
+            d = json.load(open(ref))
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            raise errors.bad_json(ref, str(e))
+        if not isinstance(d, dict):
+            raise errors.bad_json(ref, "top level is not an object")
         return d.get("data", d)
     m = re.search(r"(\d+)", str(ref))
     if not m:
-        raise ValueError(f"no character id found in: {ref!r}")
+        raise errors.bad_ref(ref)
     url = ("https://character-service.dndbeyond.com/character/v5/character/"
            + m.group(1))
     req = urllib.request.Request(url, headers={
         "Accept": "application/json",
         "User-Agent": "charactercheck (+https://github.com/chaoz23/charactercheck)"})
-    return json.load(urllib.request.urlopen(req))["data"]
+    try:
+        raw = urllib.request.urlopen(req, timeout=30)
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            raise errors.not_public(ref)
+        if e.code == 404:
+            raise errors.not_found(ref)
+        if e.code == 429:
+            raise errors.rate_limited(ref)
+        raise errors.upstream(ref, e.code)
+    except urllib.error.URLError as e:
+        raise errors.network(ref, str(getattr(e, "reason", e)))
+    except OSError as e:
+        raise errors.network(ref, str(e))
+    try:
+        payload = json.load(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise errors.bad_json(ref, str(e))
+    if not isinstance(payload, dict) or "data" not in payload:
+        raise errors.bad_json(ref, "response has no 'data' object")
+    return payload["data"]
 
 
 def _mod(score):

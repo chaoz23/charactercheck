@@ -1,17 +1,51 @@
 {
-  "name": "charactercheck",
-  "version": "0.1.0",
-  "description": "Deterministic D&D Beyond character-sheet derivation with provenance. Input: a public DDB character URL/id (or saved v5 JSON). Output: derived stats where every value carries its arithmetic, plus honest lanes: 'unhandled' (recognized-but-unmodeled data, named) and 'lint' (sheet inconsistencies).",
-  "install": "pip install charactercheck  (or: uvx charactercheck ...)",
-  "commands": {
-    "charactercheck derive <ref>": "full derived character as JSON",
-    "charactercheck stance <ref>": "pre-combat: hands, AC states with costs, attack lines",
-    "charactercheck qa <ref> [--full]": "the 100-question QA pass",
-    "charactercheck report <ref>": "unhandled + lint only — resolve these before play",
-    "charactercheck --schema": "machine-readable I/O contract"
-  },
-  "exit_codes": {"0": "derived clean", "1": "lint findings", "2": "unhandled content present"},
-  "flags": ["--pipe (refs on stdin)", "--schema", "--full"],
-  "mcp": {"command": "charactercheck-mcp", "tools": ["derive", "stance", "qa", "report"]},
-  "boundaries": "Derivation and extraction only: no rules adjudication (see srdcheck), no auth/cookies (public sheets only), no VTT output, no homebrew content database. Unrecognized data is reported by name, never silently defaulted."
+ "name": "charactercheck",
+ "version": "0.1.0",
+ "description": "Deterministic D&D Beyond character-sheet derivation with provenance. Input: a public DDB character URL/id (or saved v5 JSON). Output: derived stats where every value carries its arithmetic, plus honest lanes: 'unhandled' (recognized-but-unmodeled data, named) and 'lint' (sheet inconsistencies).",
+ "install": "pip install charactercheck  (or: uvx charactercheck ...)",
+ "commands": {
+  "charactercheck derive <ref>": "full derived character as JSON",
+  "charactercheck stance <ref>": "pre-combat: hands, AC states with costs, attack lines",
+  "charactercheck qa <ref> [--full]": "the 100-question QA pass",
+  "charactercheck report <ref>": "unhandled + lint only — resolve these before play",
+  "charactercheck --schema": "machine-readable I/O contract"
+ },
+ "exit_codes": {
+  "0": "derived clean",
+  "1": "lint findings — the sheet disagrees with itself; output still usable",
+  "2": "unhandled content present — NOT a failure; output complete and usable, resolve named items with a human",
+  "3": "could not retrieve the sheet — read the 'action' field; private sheet, bad id, or no network"
+ },
+ "flags": [
+  "--pipe (refs on stdin)",
+  "--schema",
+  "--full"
+ ],
+ "mcp": {
+  "command": "charactercheck-mcp",
+  "tools": [
+   "derive",
+   "stance",
+   "qa",
+   "report"
+  ]
+ },
+ "boundaries": "Derivation and extraction only: no rules adjudication (see srdcheck), no auth/cookies (public sheets only), no VTT output, no homebrew content database. Unrecognized data is reported by name, never silently defaulted.",
+ "invocation": {
+  "subcommands": {
+   "doctor [ref]": "Diagnose why it is not working: python, DNS, outbound HTTPS, and (with a ref) reachability of that character. Prints PASS/FAIL per check with the remedy on the first failure. --json for machine output. Exit 0 all-pass, 3 otherwise."
+  }
+ },
+ "errors": {
+  "note": "Every failure prints structured JSON with a stable 'error' kind and a one-sentence 'action'. Never a traceback. charactercheck never asks for credentials: a private sheet is answered by making it public or by passing a saved character-service JSON file.",
+  "kinds": [
+   "not_public",
+   "not_found",
+   "bad_ref",
+   "network",
+   "rate_limited",
+   "bad_json",
+   "upstream"
+  ]
+ }
 }

@@ -30,56 +30,71 @@ def _exit_code(result):
     return 0
 
 
+from . import errors
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="charactercheck", description=__doc__)
     ap.add_argument("command", nargs="?",
-                    choices=["derive", "stance", "qa", "report", "diff", "quiz", "seatpack"], default="derive")
+                    choices=["derive", "stance", "qa", "report", "diff", "quiz", "seatpack", "doctor"], default="derive")
     ap.add_argument("ref", nargs="?", help="DDB character URL / id / JSON file")
     ap.add_argument("--full", action="store_true", help="qa: print all 100 rows")
     ap.add_argument("--pipe", action="store_true", help="read refs from stdin, one per line")
     ap.add_argument("--for-dm", action="store_true", help="seatpack: redact player-authority live state")
     ap.add_argument("--baseline", help="diff: the intake snapshot JSON to compare against")
-    ap.add_argument("--version", action="version", version="charactercheck 0.4.0")
+    ap.add_argument("--version", action="version", version="charactercheck 0.5.0")
+    ap.add_argument("--json", dest="json_out", action="store_true", help="doctor: machine-readable output")
     ap.add_argument("--schema", action="store_true", help="print the I/O contract and exit")
     a = ap.parse_args(argv)
 
     if a.schema:
         print(json.dumps(SCHEMA, indent=1))
         return 0
+    if a.command == "doctor":
+        res = errors.doctor(a.ref)
+        print(errors.render_doctor(res) if not a.json_out else json.dumps(res, indent=1))
+        return 0 if res["ok"] else errors.EXIT_FETCH
+
     refs = [l.strip() for l in sys.stdin if l.strip()] if a.pipe else [a.ref]
     if not refs or refs == [None]:
         ap.error("a character ref is required (or --pipe/--schema)")
     code = 0
     for ref in refs:
-        if a.command == "derive":
-            r = derive(ref)
-            print(json.dumps(r, indent=1))
-            code = max(code, _exit_code(r))
-        elif a.command == "stance":
-            d = engine.fetch(ref)
-            print(json.dumps(engine.stance(d), indent=1))
-        elif a.command == "qa":
-            text, _ = qa.report(ref, full=a.full)
-            print(text)
-        elif a.command == "diff":
-            if not a.baseline:
-                ap.error("diff requires --baseline <intake-snapshot.json>")
-            old = engine.fetch(a.baseline)
-            new = engine.fetch(ref)
-            d = engine.diff_payloads(old, new)
-            print(json.dumps(d, indent=1))
-            code = max(code, 1 if any(d.values()) else 0)
-        elif a.command == "seatpack":
-            print(json.dumps(engine.seatpack(ref, for_dm=a.for_dm), indent=1))
-        elif a.command == "quiz":
-            print(json.dumps(engine.quiz(ref), indent=1))
-        elif a.command == "report":
-            r = derive(ref)
-            out = {"unhandled": r["unhandled"], "lint": r["lint"],
-                   "feats_identified": r["feats_identified"],
-                   "stashed_elsewhere": r["inventory"]["stashed_elsewhere"]}
-            print(json.dumps(out, indent=1))
-            code = max(code, _exit_code(r))
+      try:
+          if a.command == "derive":
+              r = derive(ref)
+              print(json.dumps(r, indent=1))
+              code = max(code, _exit_code(r))
+          elif a.command == "stance":
+              d = engine.fetch(ref)
+              print(json.dumps(engine.stance(d), indent=1))
+          elif a.command == "qa":
+              text, _ = qa.report(ref, full=a.full)
+              print(text)
+          elif a.command == "diff":
+              if not a.baseline:
+                  ap.error("diff requires --baseline <intake-snapshot.json>")
+              old = engine.fetch(a.baseline)
+              new = engine.fetch(ref)
+              d = engine.diff_payloads(old, new)
+              print(json.dumps(d, indent=1))
+              code = max(code, 1 if any(d.values()) else 0)
+          elif a.command == "seatpack":
+              print(json.dumps(engine.seatpack(ref, for_dm=a.for_dm), indent=1))
+          elif a.command == "quiz":
+              print(json.dumps(engine.quiz(ref), indent=1))
+          elif a.command == "report":
+              r = derive(ref)
+              out = {"unhandled": r["unhandled"], "lint": r["lint"],
+                     "feats_identified": r["feats_identified"],
+                     "stashed_elsewhere": r["inventory"]["stashed_elsewhere"]}
+              print(json.dumps(out, indent=1))
+              code = max(code, _exit_code(r))
+      except errors.CharacterCheckError as e:
+          # Structured, actionable, and on stdout so a piping agent
+          # sees it. Never a traceback: see charactercheck/errors.py.
+          print(json.dumps(e.as_dict(), indent=1))
+          code = max(code, e.exit_code)
     return code
 
 

@@ -17,3 +17,42 @@ jobs:
         run: |
           python -m charactercheck.cli qa tests/fixtures/torvald.json
           python -m charactercheck.cli qa tests/fixtures/vexa.json
+
+  cold-start:
+    # The user story as a gate: an agent given only the repo must succeed, or
+    # fail with something it can act on. Runs against the built wheel in a
+    # clean venv, exactly as a stranger would install it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Build and install the wheel into a clean venv
+        run: |
+          pip install build
+          python -m build --wheel
+          python -m venv /tmp/cold
+          /tmp/cold/bin/pip install dist/*.whl
+
+      - name: A malformed ref exits 3 with an actionable JSON error, no traceback
+        run: |
+          set +e
+          out=$(/tmp/cold/bin/charactercheck derive notanumber 2>&1); code=$?
+          set -e
+          echo "$out"
+          test $code -eq 3 || { echo "expected exit 3, got $code"; exit 1; }
+          echo "$out" | grep -q '"error": "bad_ref"'
+          echo "$out" | grep -q '"action"'
+          echo "$out" | grep -qv "Traceback" || { echo "traceback leaked"; exit 1; }
+
+      - name: doctor runs and reports per-check status
+        run: |
+          set +e
+          /tmp/cold/bin/charactercheck doctor --json > /tmp/doc.json
+          set -e
+          cat /tmp/doc.json
+          grep -q '"check": "python"' /tmp/doc.json
+
+      - name: The README carries the contract it promises
+        run: /tmp/cold/bin/python -m unittest discover -s tests -k TestReadmeContract -v

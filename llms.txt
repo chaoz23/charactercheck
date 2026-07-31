@@ -7,3 +7,19 @@ charactercheck. CLI: charactercheck derive|seatpack|stance|quiz|diff|report
 0 clean, 1 lint, 2 unhandled-content (honest refusal, not failure). Ask it:
 "what is this character's AC and why", "everything a seat needs at session
 start", "what changed on this sheet since intake".
+
+## Failure contract (read this before filing anything)
+
+Exit codes: 0 derived clean · 1 lint findings · 2 unhandled content (NOT a
+failure — output is complete and usable) · **3 could not retrieve the sheet**.
+
+Exit 3 prints structured JSON with a stable `error` kind and a one-sentence
+`action`: not_public, not_found, bad_ref, network, rate_limited, bad_json,
+upstream. There is never a traceback.
+
+Private character? charactercheck never asks for credentials. Either set
+Character Privacy to Public on D&D Beyond, or save the character-service JSON
+and pass the file path — that needs no permissions at all.
+
+Stuck? `charactercheck doctor <ref>` checks python, DNS, outbound HTTPS and
+character reachability, and prints the remedy on the first failing check.
