@@ -40,9 +40,12 @@ SNAPSHOT/DIFF:
   normalized_data_hash is the default privacy-filtered mechanical revision;
   snapshot_character_hash covers the stored filtered character. Three coverage
   booleans disclose only that unclassified top-level/nested fields or unsafe
-  semantic values were omitted. Derived views repeat them under
-  meta.source_coverage. Unknown-scope omission routes every family to unknown;
-  fixed root-item semantic gaps route affected families to unsupported.
+  semantic values were omitted. A fourth values-free list names only canonical
+  families affected by reviewed mechanical omissions. Derived views repeat the
+  typed coverage under meta.source_coverage. Reviewed display/provenance fields
+  are trust-neutral; reviewed mechanical omissions route listed families to
+  unsupported; unknown-scope omission routes every family to unknown; fixed
+  root-item semantic gaps route affected families to unsupported.
   Non-item and nested-item gaps remain global unknown until their dependencies
   are classified.
   Distinct comparisons also become indeterminate at `$` when private modifier-

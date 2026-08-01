@@ -132,6 +132,23 @@ class TestCharacterSnapshotV1(unittest.TestCase):
         self.assertEqual(second["source"]["coverage"],
                          first["source"]["coverage"])
 
+    def test_resnapshot_preserves_scoped_coverage(self):
+        character = copy.deepcopy(self.loaded.character)
+        character["customSpeeds"] = [{"walk": 35}]
+        first = source.make_snapshot(source.LoadedCharacter(
+            character, self.loaded.adapter, self.loaded.source_id,
+            "2026-07-31T00:00:00Z"))
+        self.assertEqual(first["source"]["coverage"][
+            "scoped_mechanical_omissions"], ["speeds"])
+
+        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+            path = os.path.join(directory, "snapshot.json")
+            with open(path, "w", encoding="utf-8") as stream:
+                json.dump(first, stream)
+            second = source.make_snapshot(source.load(path))
+        self.assertEqual(second["source"]["coverage"],
+                         first["source"]["coverage"])
+
     def test_persona_changes_only_the_stored_character_hash(self):
         character = copy.deepcopy(self.loaded.character)
         character["traits"] = {"ideals": "Synthetic ideal"}

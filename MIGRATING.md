@@ -49,14 +49,18 @@ package version before production adoption or publication.
   character, including persona only when explicitly requested. `snapshot_id`
   covers the whole envelope except its own value.
 - Snapshot export drops unclassified top-level and nested fields and records
-  three booleans under `source.coverage`; omitted names and values are not
-  serialized. `semantic_values_omitted` distinguishes unsafe formula/property
+  three booleans plus a canonical-family-only
+  `scoped_mechanical_omissions` list under `source.coverage`; omitted source
+  names and values are not serialized. `semantic_values_omitted` distinguishes unsafe formula/property
   text removed after a fixed scoped `_semanticGaps` code was retained. A
   distinct comparison with any omission flag set is
   `comparison_complete: false`, relationship `indeterminate`, and emits `$` in
   `unsupported_changes`. Absence from another lane is not completeness.
-- Canonical derived views expose the same three booleans as
+- Canonical derived views expose the same typed coverage as
   `meta.source_coverage`.
+  Reviewed display/provenance fields do not change trust. Reviewed mechanical
+  omissions add `source:scoped-fields-omitted` and route listed families to
+  `unsupported`.
   The unclassified top-level/nested flags add
   `source:unclassified-fields-omitted` and route all mechanical families to
   `unknown`. Semantic-value omission is routed by a retained item gap to

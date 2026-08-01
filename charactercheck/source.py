@@ -20,7 +20,8 @@ from urllib.parse import unquote, urlparse
 import urllib.error
 import urllib.request
 
-from . import ddb_registry, errors, registry as semantic_registry
+from . import (ddb_registry, errors, registry as semantic_registry,
+               source_field_registry)
 
 
 SNAPSHOT_SCHEMA = "charactercheck.character-snapshot"
@@ -39,11 +40,15 @@ _SOURCE_SCHEMA_CONTRACT = {
     "unscoped_definition_semantic_gap_policy": "unknown-global-scope",
     "root_item_weapon_property_scope_requires": (
         "canonical-damage-dice-and-known-integer-attack-type"),
-    "source_coverage_keys": [
+    "source_coverage_boolean_keys": [
         "unclassified_top_level_omitted",
         "unclassified_nested_omitted",
         "semantic_values_omitted",
     ],
+    "source_coverage_family_scope_key": "scoped_mechanical_omissions",
+    "source_field_registry": source_field_registry.REGISTRY_FINGERPRINT,
+    "source_field_empty_optional_policy": (
+        "none-false-empty-string-list-object-do-not-create-scope;zero-is-data"),
 }
 SOURCE_SCHEMA_FINGERPRINT = "sha256:" + hashlib.sha256(
     json.dumps(_SOURCE_SCHEMA_CONTRACT, sort_keys=True,
@@ -931,7 +936,14 @@ def _snapshot_character(envelope):
     coverage = source_meta.get("coverage")
     if (not isinstance(coverage, dict) or set(coverage) != _COVERAGE_KEYS
             or any(not isinstance(coverage[key], bool)
-                   for key in _COVERAGE_KEYS)):
+                   for key in SOURCE_COVERAGE_BOOLEAN_KEYS)
+            or not isinstance(coverage[SOURCE_COVERAGE_SCOPE_KEY], list)
+            or any(not isinstance(family, str)
+                   for family in coverage[SOURCE_COVERAGE_SCOPE_KEY])
+            or coverage[SOURCE_COVERAGE_SCOPE_KEY] != sorted(set(
+                coverage[SOURCE_COVERAGE_SCOPE_KEY]))
+            or any(family not in source_field_registry.FAMILIES
+                   for family in coverage[SOURCE_COVERAGE_SCOPE_KEY])):
         raise errors.snapshot_schema()
     if (meta["rules_profile"] != RULES_PROFILE
             or source_meta["schema"] != SOURCE_SCHEMA
@@ -1106,12 +1118,43 @@ _MODIFIER_KEYS = {
 _KNOWN_CHARACTER_VALUE_TYPES = {
     1, 2, 3, 8, 9, 24, 25, 26, 27, 28, 29, 39, 40, 41,
 }
-SOURCE_COVERAGE_KEYS = (
+SOURCE_COVERAGE_BOOLEAN_KEYS = (
     "unclassified_top_level_omitted",
     "unclassified_nested_omitted",
     "semantic_values_omitted",
 )
+SOURCE_COVERAGE_SCOPE_KEY = "scoped_mechanical_omissions"
+SOURCE_COVERAGE_KEYS = SOURCE_COVERAGE_BOOLEAN_KEYS + (
+    SOURCE_COVERAGE_SCOPE_KEY,)
 _COVERAGE_KEYS = set(SOURCE_COVERAGE_KEYS)
+
+
+def empty_source_coverage():
+    coverage = {key: False for key in SOURCE_COVERAGE_BOOLEAN_KEYS}
+    coverage[SOURCE_COVERAGE_SCOPE_KEY] = set()
+    return coverage
+
+
+def normalize_source_coverage(*values):
+    """Merge typed omission signals without retaining source field names."""
+    coverage = empty_source_coverage()
+    for value in values:
+        value = value or {}
+        for key in SOURCE_COVERAGE_BOOLEAN_KEYS:
+            coverage[key] = coverage[key] or bool(value.get(key))
+        families = value.get(SOURCE_COVERAGE_SCOPE_KEY) or []
+        if isinstance(families, (list, tuple, set, frozenset)):
+            for family in families:
+                if (isinstance(family, str)
+                        and family in source_field_registry.FAMILIES):
+                    coverage[SOURCE_COVERAGE_SCOPE_KEY].add(family)
+                else:
+                    coverage["unclassified_nested_omitted"] = True
+        else:
+            coverage["unclassified_nested_omitted"] = True
+    coverage[SOURCE_COVERAGE_SCOPE_KEY] = sorted(
+        coverage[SOURCE_COVERAGE_SCOPE_KEY])
+    return coverage
 
 
 def safe_mechanical_label(value, *, limit=256):
@@ -1130,9 +1173,9 @@ def _privacy_key(key):
                    for part in _PRIVATE_KEY_PARTS))
 
 
-def _closed_object(value, allowed, coverage, *, top_level=False,
+def _closed_object(value, allowed, coverage, *, path, top_level=False,
                    ignored=()):
-    """Copy only declared keys and record schema drift without its names."""
+    """Copy declared keys and route omissions without retaining their names."""
     out = {}
     ignored = set(ignored)
     for key, child in value.items():
@@ -1141,6 +1184,15 @@ def _closed_object(value, allowed, coverage, *, top_level=False,
         elif key in ignored or _privacy_key(key):
             continue
         else:
+            scope = source_field_registry.omission_scope(path, key)
+            if scope is not None:
+                # Empty optional containers and false/absent feature flags do
+                # not contain an omitted mechanic. Zero remains meaningful.
+                empty_optional = (child is None or child is False
+                                  or child == "" or child == [] or child == {})
+                if not empty_optional:
+                    coverage[SOURCE_COVERAGE_SCOPE_KEY].update(scope)
+                continue
             coverage[("unclassified_top_level_omitted" if top_level else
                       "unclassified_nested_omitted")] = True
     return out
@@ -1161,7 +1213,21 @@ def _closed_list(value, sanitizer, coverage, path):
 def _sanitize_modifier(value, coverage, path):
     out = _closed_object(
         value, _MODIFIER_KEYS, coverage,
-        ignored={"friendlyTypeName", "friendlySubtypeName"})
+        path=path,
+        ignored=(source_field_registry.MODIFIER_METADATA_KEYS
+                 | source_field_registry.MODIFIER_SEMANTIC_KEYS))
+    omitted_semantics = {
+        key for key in source_field_registry.MODIFIER_SEMANTIC_KEYS
+        if key in value and value[key] not in (None, False, "", [], {})
+    }
+    if omitted_semantics:
+        spec = semantic_registry.handler_for(value)
+        scope = (spec.affects if spec is not None
+                 else source_field_registry.modifier_scope(value))
+        if scope is None:
+            coverage["unclassified_nested_omitted"] = True
+        else:
+            coverage[SOURCE_COVERAGE_SCOPE_KEY].update(scope)
     for key in ("type", "subType"):
         identifier = out.get(key)
         if (identifier is not None
@@ -1179,7 +1245,8 @@ def _sanitize_modifier(value, coverage, path):
 
 
 def _sanitize_feature(value, coverage, path):
-    out = _closed_object(value, {"definition", "requiredLevel"}, coverage)
+    out = _closed_object(
+        value, {"definition", "requiredLevel"}, coverage, path=path)
     if isinstance(out.get("definition"), dict):
         out["definition"] = _sanitize_definition(
             out["definition"], coverage, path + ".definition")
@@ -1187,13 +1254,13 @@ def _sanitize_feature(value, coverage, path):
 
 
 def _sanitize_definition(value, coverage, path, *, inventory_item=False):
-    out = _closed_object(value, _DEFINITION_KEYS, coverage)
+    out = _closed_object(value, _DEFINITION_KEYS, coverage, path=path)
     gaps = set(out.get("_semanticGaps") or [])
     if isinstance(out.get("damage"), dict):
         out["damage"] = _closed_object(
             out["damage"],
             {"diceString", "diceCount", "diceValue", "diceMultiplier",
-             "fixedValue"}, coverage)
+             "fixedValue"}, coverage, path=path + ".damage")
         canonical = canonical_damage_dice(out["damage"])
         if out["damage"].get("diceString") is not None:
             if (canonical is None
@@ -1231,7 +1298,9 @@ def _sanitize_definition(value, coverage, path, *, inventory_item=False):
                 # alternate damage. Preserve presence, never prose.
                 gaps.add("weapon_property")
                 coverage["semantic_values_omitted"] = True
-            clean = _closed_object(prop, {"id", "name"}, coverage)
+            clean = _closed_object(
+                prop, {"id", "name"}, coverage,
+                path=path + ".properties[]")
             identifier = clean.get("id")
             name = clean.get("name")
             canonical = (ddb_registry.WEAPON_PROPERTIES.get(identifier)
@@ -1293,7 +1362,7 @@ def _sanitize_definition(value, coverage, path, *, inventory_item=False):
 
 
 def _sanitize_stat(value, coverage, path):
-    return _closed_object(value, {"id", "value"}, coverage)
+    return _closed_object(value, {"id", "value"}, coverage, path=path)
 
 
 def _sanitize_class(value, coverage, path):
@@ -1301,7 +1370,7 @@ def _sanitize_class(value, coverage, path):
         value,
         {"level", "hitDiceUsed", "definition", "subclassDefinition",
          "classFeatures"},
-        coverage,
+        coverage, path=path,
     )
     for key in ("definition", "subclassDefinition"):
         if isinstance(out.get(key), dict):
@@ -1319,7 +1388,7 @@ def _sanitize_inventory_item(value, coverage, path):
         value,
         {"id", "containerEntityId", "equipped", "isAttuned", "quantity",
          "definition"},
-        coverage,
+        coverage, path=path,
     )
     if isinstance(out.get("definition"), dict):
         out["definition"] = _sanitize_definition(
@@ -1349,7 +1418,8 @@ def _sanitize_buckets(value, sanitizer, coverage, path):
 
 
 def _sanitize_character_value(value, coverage, path):
-    out = _closed_object(value, {"typeId", "valueId", "value"}, coverage)
+    out = _closed_object(
+        value, {"typeId", "valueId", "value"}, coverage, path=path)
     type_id = out.get("typeId")
     if type_id not in _KNOWN_CHARACTER_VALUE_TYPES:
         # Preserve the existence and numeric handler id so the registry stays
@@ -1392,7 +1462,7 @@ def _sanitize_character_value(value, coverage, path):
 def _sanitize_spell_entry(value, coverage, path):
     out = _closed_object(
         value, {"definition", "prepared", "alwaysPrepared", "limitedUse"},
-        coverage)
+        coverage, path=path)
     if isinstance(out.get("definition"), dict):
         out["definition"] = _sanitize_definition(
             out["definition"], coverage, path + ".definition")
@@ -1400,12 +1470,13 @@ def _sanitize_spell_entry(value, coverage, path):
         out["limitedUse"] = _closed_object(
             out["limitedUse"],
             {"maxUses", "statModifierUsesId", "numberUsed",
-             "useProficiencyBonus"}, coverage)
+             "useProficiencyBonus"}, coverage, path=path + ".limitedUse")
     return out
 
 
 def _sanitize_action(value, coverage, path):
-    out = _closed_object(value, {"name", "definition", "limitedUse"}, coverage)
+    out = _closed_object(
+        value, {"name", "definition", "limitedUse"}, coverage, path=path)
     if isinstance(out.get("definition"), dict):
         out["definition"] = _sanitize_definition(
             out["definition"], coverage, path + ".definition")
@@ -1413,15 +1484,15 @@ def _sanitize_action(value, coverage, path):
         out["limitedUse"] = _closed_object(
             out["limitedUse"],
             {"maxUses", "statModifierUsesId", "numberUsed",
-             "useProficiencyBonus"}, coverage)
+             "useProficiencyBonus"}, coverage, path=path + ".limitedUse")
     return out
 
 
 def _privacy_filter_with_coverage(character, *, include_persona=False):
-    coverage = {key: False for key in SOURCE_COVERAGE_KEYS}
+    coverage = empty_source_coverage()
     value = _closed_object(
         character, _MECHANICAL_TOP_LEVEL, coverage, top_level=True,
-        ignored={"traits"},
+        ignored={"traits"}, path="$",
     )
 
     for key in ("stats", "overrideStats", "bonusStats"):
@@ -1457,13 +1528,16 @@ def _privacy_filter_with_coverage(character, *, include_persona=False):
         race = _closed_object(
             value["race"],
             {"fullName", "size", "sizeId", "weightSpeeds", "racialTraits"},
-            coverage)
+            coverage, path="race")
         if isinstance(race.get("weightSpeeds"), dict):
-            speeds = _closed_object(race["weightSpeeds"], {"normal"}, coverage)
+            speeds = _closed_object(
+                race["weightSpeeds"], {"normal"}, coverage,
+                path="race.weightSpeeds")
             if isinstance(speeds.get("normal"), dict):
                 speeds["normal"] = _closed_object(
                     speeds["normal"],
-                    {"walk", "fly", "swim", "climb", "burrow"}, coverage)
+                    {"walk", "fly", "swim", "climb", "burrow"}, coverage,
+                    path="race.weightSpeeds.normal")
             race["weightSpeeds"] = speeds
         if isinstance(race.get("racialTraits"), list):
             race["racialTraits"] = [
@@ -1473,7 +1547,9 @@ def _privacy_filter_with_coverage(character, *, include_persona=False):
         value["race"] = race
 
     if isinstance(value.get("background"), dict):
-        background = _closed_object(value["background"], {"definition"}, coverage)
+        background = _closed_object(
+            value["background"], {"definition"}, coverage,
+            path="background")
         if isinstance(background.get("definition"), dict):
             background["definition"] = _sanitize_definition(
                 background["definition"], coverage, "background.definition")
@@ -1492,7 +1568,8 @@ def _privacy_filter_with_coverage(character, *, include_persona=False):
         for block in value["classSpells"]:
             if not isinstance(block, dict):
                 continue
-            clean = _closed_object(block, {"spells"}, coverage)
+            clean = _closed_object(
+                block, {"spells"}, coverage, path="classSpells[]")
             if isinstance(clean.get("spells"), list):
                 clean["spells"] = [
                     _sanitize_spell_entry(row, coverage, "classSpells[].spells[]")
@@ -1508,34 +1585,42 @@ def _privacy_filter_with_coverage(character, *, include_persona=False):
         ]
     if isinstance(value.get("conditions"), list):
         value["conditions"] = [
-            _closed_object(row, {"id", "level"}, coverage)
+            _closed_object(
+                row, {"id", "level"}, coverage, path="conditions[]")
             for row in value["conditions"] if isinstance(row, dict)
         ]
     for key in ("spellSlots", "pactMagic"):
         if isinstance(value.get(key), list):
             value[key] = [
-                _closed_object(row, {"level", "available", "used"}, coverage)
+                _closed_object(
+                    row, {"level", "available", "used"}, coverage,
+                    path=key + "[]")
                 for row in value[key] if isinstance(row, dict)
             ]
     if isinstance(value.get("deathSaves"), dict):
         value["deathSaves"] = _closed_object(
-            value["deathSaves"], {"successCount", "failCount"}, coverage)
+            value["deathSaves"], {"successCount", "failCount"}, coverage,
+            path="deathSaves")
     if isinstance(value.get("currencies"), dict):
         value["currencies"] = _closed_object(
-            value["currencies"], {"cp", "sp", "ep", "gp", "pp"}, coverage)
+            value["currencies"], {"cp", "sp", "ep", "gp", "pp"}, coverage,
+            path="currencies")
     if isinstance(value.get("customItems"), list):
         customs = []
         for index, custom in enumerate(value["customItems"], 1):
             if not isinstance(custom, dict):
                 continue
-            clean = _closed_object(custom, {"name", "weight", "quantity"}, coverage)
+            clean = _closed_object(
+                custom, {"name", "weight", "quantity"}, coverage,
+                path="customItems[]")
             if "name" in clean:
                 clean["name"] = f"Custom item {index}"
             customs.append(clean)
         value["customItems"] = customs
     if isinstance(value.get("preferences"), dict):
         value["preferences"] = _closed_object(
-            value["preferences"], _SAFE_PREFERENCE_KEYS, coverage)
+            value["preferences"], _SAFE_PREFERENCE_KEYS, coverage,
+            path="preferences")
         for key, preference in list(value["preferences"].items()):
             if not isinstance(preference, (int, bool, type(None))):
                 value["preferences"][key] = None
@@ -1571,15 +1656,14 @@ def privacy_filter(character, *, include_persona=False):
 def privacy_filter_with_coverage(character, *, include_persona=False):
     """Return the public projection and its closed schema-drift signal.
 
-    The booleans deliberately reveal neither omitted field names nor values.
-    Callers that publish trust assessments must propagate them: silently
-    discarding an unclassified omission could turn incomplete observation into
-    an apparently trusted result.
+    Coverage deliberately reveals neither omitted field names nor values. The
+    scoped list contains canonical mechanical family names only. Callers that
+    publish trust assessments must propagate it: silently discarding an
+    omission could turn incomplete observation into apparent trust.
     """
     character, coverage = _privacy_filter_with_coverage(
         character, include_persona=include_persona)
-    return character, {key: bool(coverage[key])
-                       for key in SOURCE_COVERAGE_KEYS}
+    return character, normalize_source_coverage(coverage)
 
 
 def mechanical_hash(character):
@@ -1621,9 +1705,7 @@ def make_snapshot_object(loaded, *, include_persona=False):
 
     character, coverage = privacy_filter_with_coverage(
         loaded.character, include_persona=include_persona)
-    for key in SOURCE_COVERAGE_KEYS:
-        coverage[key] = (coverage[key]
-                         or bool((loaded.source_coverage or {}).get(key)))
+    coverage = normalize_source_coverage(coverage, loaded.source_coverage)
     mechanical_character = privacy_filter(
         loaded.character, include_persona=False)
     character_hash = normalized_hash(character)

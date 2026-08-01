@@ -188,6 +188,62 @@ class TestDefaultPrivacy(unittest.TestCase):
                 self.assertNotIn(secret, rendered)
                 self.assertNotIn(field_name, rendered)
 
+    def test_reviewed_display_fields_do_not_change_trust(self):
+        character = source.load(CANARY).character
+        character["canEdit"] = True
+        character["dateModified"] = "DISPLAY_CANARY_DO_NOT_EMIT"
+        character["stats"][0]["name"] = "DISPLAY_STAT_CANARY_DO_NOT_EMIT"
+
+        report = engine.derive_data(character)
+
+        self.assertEqual(report["meta"]["source_coverage"], {
+            "unclassified_top_level_omitted": False,
+            "unclassified_nested_omitted": False,
+            "semantic_values_omitted": False,
+            "scoped_mechanical_omissions": [],
+        })
+        self.assertEqual(report["trust"]["unknown"], {})
+        self.assertEqual(report["trust"]["unsupported"], {})
+        rendered = json.dumps(report)
+        self.assertNotIn("DISPLAY_CANARY_DO_NOT_EMIT", rendered)
+        self.assertNotIn("DISPLAY_STAT_CANARY_DO_NOT_EMIT", rendered)
+
+    def test_reviewed_mechanical_omission_is_family_scoped(self):
+        character = source.load(CANARY).character
+        character["customSenses"] = [{
+            "futureShape": "SCOPED_SENSE_CANARY_DO_NOT_EMIT",
+        }]
+
+        report = engine.derive_data(character)
+        coverage = report["meta"]["source_coverage"]
+
+        self.assertFalse(coverage["unclassified_top_level_omitted"])
+        self.assertFalse(coverage["unclassified_nested_omitted"])
+        self.assertEqual(coverage["scoped_mechanical_omissions"], ["senses"])
+        self.assertEqual(report["trust"]["unknown"], {})
+        self.assertEqual(report["trust"]["unsupported"], {
+            "senses": ["source:scoped-fields-omitted"],
+        })
+        finding = next(
+            item for item in report["unhandled"]["items"]
+            if item["pattern"] == "source:scoped-fields-omitted")
+        self.assertEqual(finding["possibly_affects"], ["senses"])
+        rendered = json.dumps(report)
+        self.assertNotIn("futureShape", rendered)
+        self.assertNotIn("SCOPED_SENSE_CANARY_DO_NOT_EMIT", rendered)
+
+    def test_invalid_external_family_scope_fails_closed_globally(self):
+        character = source.load(CANARY).character
+
+        report = engine.derive_data(character, source_coverage={
+            "scoped_mechanical_omissions": ["future-family"],
+        })
+
+        self.assertTrue(report["meta"]["source_coverage"][
+            "unclassified_nested_omitted"])
+        self.assertEqual(set(report["trust"]["unknown"]),
+                         set(engine.FAMILY_CATALOG))
+
     def test_snapshot_replay_and_qa_preserve_omission_trust(self):
         character = source.load(CANARY).character
         character["classes"][0]["definition"][

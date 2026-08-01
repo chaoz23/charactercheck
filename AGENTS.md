@@ -61,11 +61,14 @@ distinct snapshot has any omission-coverage flag set, the comparison is
 `indeterminate` and emits `$`; omitted names, values, and unsafe semantic text
 are not exposed. The same applies when modifier restriction semantics were
 omitted. Same-revision named persona/non-mechanical deltas are
-`mechanically_unchanged`, not `unchanged`. Direct derived views carry the same
-three booleans under `meta.source_coverage`. Either unclassified-field flag
-routes every mechanical family to `unknown`; semantic-value omission preserves
-a fixed gap that routes known item impact to `unsupported`, while a non-item
-gap remains global `unknown` until its dependency scope is classified.
+`mechanically_unchanged`, not `unchanged`. Direct derived views carry three
+booleans plus a values-free `scoped_mechanical_omissions` family list under
+`meta.source_coverage`. Reviewed display/provenance omissions do not change
+trust; reviewed mechanical omissions route only their declared families to
+`unsupported`. Either unclassified-field flag routes every mechanical family
+to `unknown`; semantic-value omission preserves a fixed gap that routes known
+item impact to `unsupported`, while a non-item gap remains global `unknown`
+until its dependency scope is classified.
 Save and reuse one snapshot when multiple views must describe the
 same observation. Snapshot hashes are not signatures or proof of origin; keep
 the baseline in a trusted store.

@@ -63,10 +63,11 @@
     "coverage": {
       "unclassified_top_level_omitted": "boolean only; no omitted name or value is serialized",
       "unclassified_nested_omitted": "boolean only; no omitted name or value is serialized",
-      "semantic_values_omitted": "boolean only; fixed field-owned semantic-gap codes route the impact without serializing omitted text"
+      "semantic_values_omitted": "boolean only; fixed field-owned semantic-gap codes route the impact without serializing omitted text",
+      "scoped_mechanical_omissions": "sorted canonical family names only; reviewed omitted source field names and values are not serialized"
     },
-    "derive_invariant": "the same three booleans appear under meta.source_coverage; either unclassified-field flag adds source:unclassified-fields-omitted and routes every mechanical family to unknown, while semantic-value omissions retain fixed gap codes that route known root-item impact to unsupported and unscoped non-item or nested-item impact to global unknown",
-    "diff_invariant": "distinct snapshots with any coverage boolean true or omitted modifier restriction semantics emit $ in unsupported_changes and relationship indeterminate; same-revision named non-mechanical deltas are mechanically_unchanged; exact identity is unchanged"
+    "derive_invariant": "the same typed coverage appears under meta.source_coverage; reviewed display/provenance omissions are trust-neutral, scoped mechanical omissions add source:scoped-fields-omitted for listed families, either unclassified-field flag adds source:unclassified-fields-omitted and routes every mechanical family to unknown, and semantic-value omissions retain fixed gap codes that route known root-item impact to unsupported and unscoped non-item or nested-item impact to global unknown",
+    "diff_invariant": "distinct snapshots with any nonempty omission coverage or omitted modifier restriction semantics emit $ in unsupported_changes and relationship indeterminate; same-revision named non-mechanical deltas are mechanically_unchanged; exact identity is unchanged"
   },
   "library": {
     "canonical": "package-level derive(ref) and stance(ref) preserve trust and source coverage",

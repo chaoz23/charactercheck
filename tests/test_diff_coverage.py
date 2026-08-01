@@ -130,6 +130,19 @@ class TestSpecificChangedPaths(unittest.TestCase):
 
 
 class TestRevisionFallbackAndCLIExit(unittest.TestCase):
+    def test_scoped_source_omission_makes_comparison_indeterminate(self):
+        baseline = fixture_character()
+        candidate = copy.deepcopy(baseline)
+        candidate["customSenses"] = [{"distance": 60}]
+
+        result = diff_for(baseline, candidate)
+
+        self.assertEqual(result["meta"]["relationship"], "indeterminate")
+        self.assertFalse(result["meta"]["comparison_complete"])
+        self.assertIn("bounded mechanical impact", " ".join(
+            item["message"] for item in result["unsupported_changes"]
+            if item["field"] == "$"))
+
     def test_omitted_semantic_text_makes_distinct_comparison_indeterminate(self):
         baseline = fixture_character()
         candidate = copy.deepcopy(baseline)

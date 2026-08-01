@@ -17,8 +17,11 @@ compiled; callers must still treat them as user-authored data.
 Snapshot export uses closed allowlists at the top level and inside supported
 nested objects. Unknown fields are omitted rather than copied. The snapshot
 records three omission booleans—`unclassified_top_level_omitted`,
-`unclassified_nested_omitted`, and `semantic_values_omitted`—without preserving
-omitted names or values. Fixed, field-owned semantic-gap codes survive
+`unclassified_nested_omitted`, and `semantic_values_omitted`—plus a sorted
+`scoped_mechanical_omissions` list containing canonical family names only.
+Omitted source names and values are never preserved. Reviewed
+display/provenance fields are trust-neutral; reviewed mechanical omissions make
+only their listed families unsupported. Fixed, field-owned semantic-gap codes survive
 filtering so known item omissions can route only the affected family to
 `unsupported`; a retained unscoped non-item or nested-item gap fails closed as
 global `unknown`. It does not export a hash of the raw pre-filter source:
@@ -32,7 +35,7 @@ trusted; omitted names and values remain absent. Modifier restriction prose is
 replaced by a presence sentinel. Because two different private restrictions
 therefore cannot be compared, distinct restriction-bearing snapshots produce
 an indeterminate diff at `$`; no digest or text oracle is retained. A distinct
-snapshot with any omission flag set is likewise indeterminate.
+snapshot with any nonempty omission coverage is likewise indeterminate.
 
 Persona can be included only through an explicitly authorized local CLI/library
 call (`--include-persona` in the CLI). It is bounded and marked sensitive and

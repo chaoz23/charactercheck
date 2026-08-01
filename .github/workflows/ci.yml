@@ -24,10 +24,6 @@ jobs:
           HTTPS_PROXY: http://127.0.0.1:9
           ALL_PROXY: http://127.0.0.1:9
           NO_PROXY: ""
-          http_proxy: http://127.0.0.1:9
-          https_proxy: http://127.0.0.1:9
-          all_proxy: http://127.0.0.1:9
-          no_proxy: ""
         run: python -W error::ResourceWarning -m unittest discover -s tests -v
       - name: Coverage Inventory on synthetic fixtures
         env: *offline-network
@@ -62,7 +58,8 @@ jobs:
           tar -tzf "$archive" > /tmp/charactercheck-sdist-files.txt
           for required in \
             AGENTS.md CHANGELOG.md LICENSE MIGRATING.md NOTICE PRIVACY.md README.md \
-            SECURITY.md SUPPORT.md THIRD_PARTY_NOTICES.md llms.txt server.json tool.json \
+            SECURITY.md SOURCE_FIELD_ROUTING.md SUPPORT.md THIRD_PARTY_NOTICES.md \
+            llms.txt server.json tool.json \
             charactercheck/source.py charactercheck/registry.py \
             charactercheck/ddb_registry.py charactercheck/ddb-config-registry.json \
             ECOSYSTEM_CONFORMANCE.md \

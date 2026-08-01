@@ -35,6 +35,12 @@ previously unpublished version and update `server.json` in the same release.
   Plain `fetch`/workspace composition now fails closed when that evidence would
   be lost; package-level `stance` is ref-based and trust-bearing, and raw
   `build` is no longer exported.
+- Added a versioned, privacy-safe DDB source-field routing registry. Reviewed
+  display/provenance omissions are trust-neutral, reviewed mechanical omissions
+  carry canonical family scopes and become `unsupported`, and only genuinely
+  unclassified paths retain sheet-wide `unknown`. The registry is fingerprinted
+  into the source schema and its modifier scopes are checked against the public
+  blast-radius router.
 - Made distinct snapshot comparisons indeterminate when private modifier
   restrictions were omitted, distinguished same-revision named deltas as
   `mechanically_unchanged`, enforced local character identity, and validated

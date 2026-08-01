@@ -51,6 +51,19 @@ BLAST_MAP = {
     "bonus:saving-throws": (["saves"], "all-saves bonus"),
     "bonus:proficiency-bonus": (["proficiency_bonus", "saves", "skills", "attacks", "spell_save_dc"], "PB modifier"),
     "bonus:ability-score-maximum": (["abilities"], "ability-cap increase with unresolved target semantics"),
+    "advantage:saving-throws": (["saves"], "saving-throw advantage"),
+    "bonus:spell-group-healing": (["spell_output"], "spell-group healing bonus"),
+    "immunity:magical-sleep": (["defenses"], "sleep immunity"),
+    "proficiency:calligraphers-supplies": (["skills"], "tool proficiency"),
+    "set-base:darkvision": (["senses"], "darkvision distance"),
+    "set:innate-speed-walking": (["speeds"], "walking speed"),
+    "set:subclass": ([
+        "abilities", "ac", "initiative", "hp", "saves", "skills",
+        "attacks", "weapons", "speeds", "senses", "defenses",
+        "languages", "proficiency_bonus", "spellcasting", "spell_save_dc",
+        "spell_attack_bonus", "spell_output", "spell_slots",
+        "prepared_spells", "resources",
+    ], "subclass selection can affect the static class build"),
 }
 MAXIMAL = ["unknown — treat all derived values as unverified"]
 
@@ -139,11 +152,8 @@ def fetch(ref):
     """
     loaded = source.load(ref)
     character, detected = source.privacy_filter_with_coverage(loaded.character)
-    coverage = {
-        key: bool(detected[key]
-                  or (loaded.source_coverage or {}).get(key))
-        for key in source.SOURCE_COVERAGE_KEYS
-    }
+    coverage = source.normalize_source_coverage(
+        detected, loaded.source_coverage)
     if any(coverage.values()):
         from . import errors
         raise errors.source_coverage()
@@ -846,10 +856,7 @@ def stance(ref):
 
 def _normalized_source_coverage(*values):
     """Merge privacy/schema omission signals without exposing omitted data."""
-    return {
-        key: any(bool((value or {}).get(key)) for value in values)
-        for key in source.SOURCE_COVERAGE_KEYS
-    }
+    return source.normalize_source_coverage(*values)
 
 
 def _projection_meta(loaded=None, character=None, source_coverage=None):
@@ -1033,6 +1040,27 @@ def derive_data(d, *, meta=None, source_coverage=None):
         report_meta = copy.deepcopy(meta)
         report_meta["source_coverage"] = coverage
     W = build(d, _privacy_filtered=True)
+    scoped_families = coverage.get(source.SOURCE_COVERAGE_SCOPE_KEY) or []
+    if scoped_families:
+        pattern = "source:scoped-fields-omitted"
+        scoped_gap = {
+            "pattern": pattern,
+            "source_bucket": "source",
+            "component_id": None,
+            "item_id": None,
+            "restriction": None,
+            "affects": list(scoped_families),
+            "handler_id": "source-field-registry-v1",
+            "state": "unsupported",
+            "reason": ("one or more reviewed source fields were omitted; "
+                       "their impact is bounded to the declared families"),
+        }
+        material = pattern + ":" + ",".join(scoped_families)
+        scoped_gap["finding_id"] = (
+            "finding:" + hashlib.sha256(material.encode("utf-8")).hexdigest()[:16])
+        W["unhandled_details"].append(scoped_gap)
+        W["unhandled_modifiers"] = sorted(
+            set(W["unhandled_modifiers"]) | {pattern})
     if (coverage.get("unclassified_top_level_omitted")
             or coverage.get("unclassified_nested_omitted")):
         pattern = "source:unclassified-fields-omitted"
@@ -1049,7 +1077,8 @@ def derive_data(d, *, meta=None, source_coverage=None):
                        "their mechanical scope is unknown"),
         }
         material = (pattern + ":" + ",".join(
-            key for key in source.SOURCE_COVERAGE_KEYS if coverage[key]))
+            key for key in source.SOURCE_COVERAGE_BOOLEAN_KEYS
+            if coverage[key]))
         coverage_gap["finding_id"] = (
             "finding:" + hashlib.sha256(material.encode("utf-8")).hexdigest()[:16])
         W["unhandled_details"].append(coverage_gap)
@@ -1636,8 +1665,12 @@ def diff_snapshots(old_snapshot, new_snapshot):
     semantic_values_omitted = any(
         bool(coverage.get("semantic_values_omitted"))
         for coverage in (old_coverage, new_coverage))
+    scoped_source_omitted = any(
+        bool(coverage.get(source.SOURCE_COVERAGE_SCOPE_KEY))
+        for coverage in (old_coverage, new_coverage))
     source_coverage_incomplete = (
-        unclassified_source_omitted or semantic_values_omitted)
+        unclassified_source_omitted or semantic_values_omitted
+        or scoped_source_omitted)
     restriction_semantics_omitted = any(
         record.get("restriction")
         for character in (old, new)
@@ -1653,6 +1686,10 @@ def diff_snapshots(old_snapshot, new_snapshot):
             reasons.append("one or both snapshots omitted unclassified source fields")
         if semantic_values_omitted:
             reasons.append("one or both snapshots omitted unsafe semantic values")
+        if scoped_source_omitted:
+            reasons.append(
+                "one or both snapshots omitted reviewed source fields with "
+                "bounded mechanical impact")
         if restriction_semantics_omitted:
             reasons.append("modifier restriction text was intentionally omitted")
         out["unsupported_changes"].append({
@@ -1696,9 +1733,9 @@ def diff_snapshots(old_snapshot, new_snapshot):
         "classified": sorted(covered_top_level),
         "source_comparison_complete": comparison_complete,
         "contract": ("coarse supported classifiers name changed source families; "
-                     "a changed revision, unclassified source-coverage gap, or "
-                     "omitted modifier restriction comparison is emitted at '$' "
-                     "in unsupported_changes"),
+                     "a changed revision, any source-coverage gap, or omitted "
+                     "modifier restriction comparison is emitted at '$' in "
+                     "unsupported_changes"),
     }
     return out
 

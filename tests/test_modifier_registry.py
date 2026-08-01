@@ -12,7 +12,7 @@ import os
 import unittest
 from unittest import mock
 
-from charactercheck import engine, registry, source
+from charactercheck import engine, registry, source, source_field_registry
 
 
 FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "torvald.json")
@@ -42,6 +42,27 @@ def derived_numbers(character):
         "initiative": report["combat"]["initiative"]["bonus"],
         "hp_max": report["combat"]["hp"]["max"],
     }
+
+
+class TestSourceModifierScopeRegistry(unittest.TestCase):
+    def test_registry_fingerprint_is_reviewed_and_pinned(self):
+        self.assertEqual(
+            source_field_registry.REGISTRY_FINGERPRINT,
+            "sha256:0409d146ff2fffe4f66347693456ad0bf64411d6910a5128d81fa0922efd37f4",
+        )
+        self.assertEqual(
+            source.SOURCE_SCHEMA_FINGERPRINT,
+            "sha256:7d3db435f5eb6f5f697966848ce1c9f419d3582e88c41e4bd9eb95d4262feebc",
+        )
+
+    def test_source_family_catalog_matches_engine_catalog(self):
+        self.assertEqual(source_field_registry.FAMILIES,
+                         set(engine.FAMILY_CATALOG))
+
+    def test_source_and_public_blast_radius_registries_cannot_drift(self):
+        for pattern, families in source_field_registry.MODIFIER_PATTERN_SCOPES.items():
+            with self.subTest(pattern=pattern):
+                self.assertEqual(set(engine.blast(pattern)[0]), set(families))
 
 
 def workspace_signature(workspace):

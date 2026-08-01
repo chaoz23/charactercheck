@@ -106,6 +106,7 @@ versioned model/behavior oracle. DDB/displayed and third-party calculated values
 are attributed claims, not unquestionable truth; disagreement must become a
 non-trusted conflict. See
 [ECOSYSTEM_CONFORMANCE.md](https://github.com/chaoz23/charactercheck/blob/main/ECOSYSTEM_CONFORMANCE.md)
+[SOURCE_FIELD_ROUTING.md](https://github.com/chaoz23/charactercheck/blob/main/SOURCE_FIELD_ROUTING.md),
 and [THIRD_PARTY_NOTICES.md](https://github.com/chaoz23/charactercheck/blob/main/THIRD_PARTY_NOTICES.md).
 
 The observed DDB service/config surfaces remain undocumented and unsupported
@@ -190,8 +191,11 @@ authenticated session host bind them to principals and audit history.
 Snapshot filtering is closed at the top level and inside supported nested
 objects. `source.coverage` contains three booleans:
 `unclassified_top_level_omitted`, `unclassified_nested_omitted`, and
-`semantic_values_omitted`. They reveal only that source data was omitted, never
-its names or values. The first two have unknown mechanical scope; derive adds
+`semantic_values_omitted`, plus a sorted `scoped_mechanical_omissions` list of
+canonical family names. It never carries omitted source names or values.
+Reviewed display/provenance omissions are trust-neutral; reviewed mechanical
+omissions add `source:scoped-fields-omitted` and route only listed families to
+`unsupported`. The first two booleans have unknown mechanical scope; derive adds
 the static `source:unclassified-fields-omitted` finding and routes every
 mechanical family to `unknown`. The third records unsafe semantic text removed
 after a fixed, field-scoped `_semanticGaps` code was retained; the
@@ -201,9 +205,9 @@ downstream view may not turn any incomplete observation back into `trusted`.
 
 Diff is partial by design. Its `coverage.classified` list enumerates the coarse
 source families it can compare. When either of two distinct snapshots says an
-unclassified field or unsafe semantic value was omitted, or either contains
-private modifier restriction semantics whose text was intentionally omitted,
-diff emits a `$`
+unclassified or reviewed scoped field or unsafe semantic value was omitted, or
+either contains private modifier restriction semantics whose text was
+intentionally omitted, diff emits a `$`
 `unsupported_changes` record, sets `comparison_complete: false`, and reports
 the relationship as `indeterminate`; an exact identical snapshot can still be
 `unchanged`. Distinct snapshots with the same mechanical revision but a named

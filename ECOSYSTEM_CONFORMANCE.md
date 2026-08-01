@@ -44,6 +44,8 @@ source and license decision.
 High-value pinned DDB Importer evidence includes its
 [character source types](https://github.com/MrPrimate/ddb-importer/blob/0227f9cb5bee6ec74ac6ea2956b22da4cd7b4460/src/types/ddb-character-source.d.ts),
 [item source types](https://github.com/MrPrimate/ddb-importer/blob/0227f9cb5bee6ec74ac6ea2956b22da4cd7b4460/src/types/ddb-item-source.d.ts),
+[choice advancement handling](https://github.com/MrPrimate/ddb-importer/blob/0227f9cb5bee6ec74ac6ea2956b22da4cd7b4460/src/parser/advancements/AdvancementHelper.ts),
+[choice/option/optional-feature modifier activation](https://github.com/MrPrimate/ddb-importer/blob/0227f9cb5bee6ec74ac6ea2956b22da4cd7b4460/src/parser/lib/DDBModifiers.ts),
 [AC parser](https://github.com/MrPrimate/ddb-importer/blob/0227f9cb5bee6ec74ac6ea2956b22da4cd7b4460/src/parser/character/ac.ts), and
 [config refresh safeguards](https://github.com/MrPrimate/ddb-importer/blob/0227f9cb5bee6ec74ac6ea2956b22da4cd7b4460/tools/fetch-ddb-config.mjs).
 Pins are research baselines, not automatic upgrade targets.
