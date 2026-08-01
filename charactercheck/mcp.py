@@ -23,7 +23,8 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {
          "ref": {"type": "string"}}, "required": ["ref"]}},
     {"name": "qa", "description":
-        "Run the 100-row extraction Coverage Inventory. This is not a validity score.",
+        "Run the 100-question extraction Coverage Inventory. Every answer carries "
+        "its question and closed trust state; this is not a validity score.",
      "inputSchema": {"type": "object", "properties": {
          "ref": {"type": "string"}, "full": {"type": "boolean"}}, "required": ["ref"]}},
     {"name": "diff", "description":
@@ -44,8 +45,8 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {"ref": {"type": "string"}},
                      "required": ["ref"]}},
     {"name": "quiz", "description":
-        "Read-only confirmation prompts. Expected answers exist only for canonical "
-        "trusted fields; mutable or uncertain fields remain null.",
+        "Read-only settlement and sheet-specific finding prompts. Expected answers "
+        "exist only for canonical trusted fields; mutable or uncertain fields remain null.",
      "inputSchema": {"type": "object", "properties": {"ref": {"type": "string"}},
                      "required": ["ref"]}},
     {"name": "report", "description":

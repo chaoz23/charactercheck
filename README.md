@@ -139,10 +139,10 @@ collection, inventory, modifier, and container-traversal limits.
 | `derive <ref> --brief` | Deterministic chat-sized summary; still subject to findings |
 | `stance <ref>` | Envelope containing stance, canonical assessment, trust, fields, and observation metadata |
 | `report <ref>` | Canonical field/trust assessments plus findings and identified feature names |
-| `qa <ref> [--full]` | 100-row **Coverage Inventory** using closed field states; not a validity score |
+| `qa <ref> [--full]` | 100-question **Coverage Inventory** pairing each answer with a closed field state; not a validity score |
 | `seatpack <ref>` | Privacy-minimized read-only character context |
 | `intake <ref>` | Pre-session context plus questions and authority boundaries |
-| `quiz <ref>` | Questions; non-trusted values must not be treated as answer keys |
+| `quiz <ref>` | Settlement and sheet-specific finding questions; non-trusted values never become answer keys |
 | `snapshot <ref>` | Export a versioned, integrity-checked observation |
 | `diff <ref> --baseline snapshot.json` | Classify supported changes; mark omitted-source comparisons indeterminate |
 | `doctor [ref] [--json]` | Diagnose runtime/network/source access without echoing the ref |
@@ -150,6 +150,21 @@ collection, inventory, modifier, and container-traversal limits.
 
 `--pipe` reads refs from standard input. `charactercheck --schema` emits the
 machine-readable CLI contract.
+
+### Question catalog
+
+The Coverage Inventory pairs each of its 100 answers with the corresponding
+human-readable D&D 2024 character-sheet lookup question. Structured rows carry
+`number`, `field`, `question`, `state`, `value`, and `content_trust`. The
+question catalog is an organizational contract, not an assertion that the
+supplied JSON Schema's value types or the complete 2024 rules are implemented.
+An answer remains unusable when its row is `unsupported`, `unknown`, or
+`invalid`; mutable `confirm` rows remain player/session-host authority.
+
+The settlement `quiz` also includes each sheet-specific lint question exactly
+once. Those prompts never receive an expected answer when their affected
+family is not trusted. Account identity and roleplay/persona questions remain
+privacy-omitted from default output.
 
 ### Snapshots and diff
 

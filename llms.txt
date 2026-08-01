@@ -24,7 +24,9 @@ INPUT:
 
 TRUST:
   Read meta, then canonical fields for every value. Use trust for family routing
-  and lint/unhandled for evidence and questions. "trusted" means no detected
+  and lint/unhandled for evidence and questions. QA rows pair each answer with
+  one of the 100 catalog questions; the wording never strengthens row trust.
+  "trusted" means no detected
   finding within supported coverage, not globally safe. Family ask_player maps
   to field confirm. Do not improvise through unsupported/unknown/invalid.
 

@@ -14,11 +14,11 @@
   "commands": {
     "charactercheck derive <ref> [--brief]": "selected derivation plus canonical fields, findings, trust, and observation metadata",
     "charactercheck stance <ref>": "stance envelope with canonical assessment, findings, trust, and observation metadata",
-    "charactercheck qa <ref> [--full]": "100-row Coverage Inventory with closed states; not validity",
+    "charactercheck qa <ref> [--full]": "100-question Coverage Inventory pairing answers with closed states; not validity",
     "charactercheck report <ref> [--brief]": "canonical fields/trust plus findings and identified feature names",
     "charactercheck snapshot <ref>": "export CharacterSnapshotV1 with separate default-mechanical, stored-character, and whole-envelope hashes plus omission coverage",
     "charactercheck diff <ref> --baseline <snapshot.json>": "classify supported changes; distinct snapshots with any omitted-source coverage or restriction semantics fail closed as indeterminate at $",
-    "charactercheck quiz <ref>": "settlement questions with conservative expected values",
+    "charactercheck quiz <ref>": "settlement and sheet-specific finding questions with conservative expected values",
     "charactercheck seatpack <ref> [--for-dm] [--include-persona]": "privacy-minimized read-only context; --for-dm marks all player-authority live values; persona is local explicit opt-in",
     "charactercheck intake <ref> [--for-dm] [--include-persona]": "pre-session context, questions, trust and authority boundary; --for-dm is redaction, not authorization",
     "charactercheck selftest": "offline installation and selected-derivation smoke test",

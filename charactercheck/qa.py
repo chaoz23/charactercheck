@@ -1,10 +1,11 @@
-"""Coverage Inventory — a 100-row extraction inventory, run deterministically.
+"""Coverage Inventory — a 100-question extraction inventory, run deterministically.
 
 It is not a validity score or a complete rules audit. Statuses describe this
 version's extraction coverage, not whether a character is rules-legal.
 """
 
 from . import engine
+from .question_catalog import CATALOG_ID, QUESTION_BY_NUMBER
 from .engine import ABIL, ABILN, ALIGN, SKILLS, FEAT_CATEGORIES
 import re as _re
 
@@ -261,7 +262,9 @@ def report_data(ref, full=False):
                      engine=meta.get("engine_version")))
     for n, k, s, v in rows:
         if full or s != "trusted":
-            lines.append(f" {s.upper():14} {n:>3}. {k}: {v}")
+            lines.append(
+                f" {s.upper():14} {n:>3}. {QUESTION_BY_NUMBER[n]} "
+                f"[{k}]: {v}")
     assessments = {
         field_id: {key: value for key, value in field.items() if key != "value"}
         for field_id, field in (derived.get("fields") or {}).items()
@@ -271,8 +274,17 @@ def report_data(ref, full=False):
         "trust": derived.get("trust"),
         "fields": assessments,
         "coverage": counts,
+        "question_catalog": {
+            "id": CATALOG_ID,
+            "count": len(QUESTION_BY_NUMBER),
+            "contract": (
+                "questions organize extraction; row state and authority decide "
+                "whether an answer may be relied upon"),
+        },
         "rows": [
-            {"number": n, "field": key, "state": state, "value": value,
+            {"number": n, "field": key,
+             "question": QUESTION_BY_NUMBER[n],
+             "state": state, "value": value,
              "content_trust": "untrusted_source_data"}
             for n, key, state, value in rows if full or state != "trusted"
         ],

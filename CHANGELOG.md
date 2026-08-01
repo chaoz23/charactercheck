@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Pair every Coverage Inventory answer with its numbered 2024 character-sheet
+  question, and include deduplicated sheet-specific lint questions in `quiz`
+  without supplying answer keys for non-trusted mechanics.
+
 This section describes source changes after the published 0.6.2 artifact. The
 tree still carries `0.6.2` package/version metadata during review; that is not
 a claim that PyPI contains these changes. A future release must use a new,

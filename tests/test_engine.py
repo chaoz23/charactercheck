@@ -7,6 +7,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from charactercheck import derive, engine  # noqa: E402
 from charactercheck.cli import _exit_code  # noqa: E402
 from charactercheck import qa  # noqa: E402
+from charactercheck.question_catalog import (  # noqa: E402
+    CATALOG_ID, QUESTION_BY_NUMBER, QUESTIONS)
 
 FIX = os.path.join(os.path.dirname(__file__), "fixtures")
 TORVALD = os.path.join(FIX, "torvald.json")
@@ -115,6 +117,33 @@ class TestQA(unittest.TestCase):
         self.assertTrue(all(q[2] in states for q in rows))
         self.assertTrue(any(q[2] == "trusted" for q in rows))
         self.assertTrue(any(q[2] == "confirm" for q in rows))
+
+    def test_qa_exposes_the_complete_numbered_question_catalog(self):
+        self.assertEqual(len(QUESTIONS), 100)
+        self.assertEqual(set(QUESTION_BY_NUMBER), set(range(1, 101)))
+        self.assertTrue(all(question.endswith("?") for question in QUESTIONS))
+        data = qa.report_data(TORVALD, full=True)
+        self.assertEqual(data["question_catalog"], {
+            "id": CATALOG_ID,
+            "count": 100,
+            "contract": (
+                "questions organize extraction; row state and authority decide "
+                "whether an answer may be relied upon"),
+        })
+        self.assertEqual(len(data["rows"]), 100)
+        for row in data["rows"]:
+            self.assertEqual(row["question"],
+                             QUESTION_BY_NUMBER[row["number"]])
+
+    def test_qa_text_pairs_each_answer_with_its_question(self):
+        data = qa.report_data(TORVALD, full=True)
+        self.assertIn(
+            "1. What is the character's name? [characterName]",
+            data["text"])
+        self.assertIn(
+            "100. What allies, organizations, or Bastions (2024 DMG) is "
+            "the character affiliated with? [alliesAndOrganizations]",
+            data["text"])
 
 
 if __name__ == "__main__":

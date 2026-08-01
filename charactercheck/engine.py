@@ -1800,6 +1800,28 @@ def quiz(ref):
                    "state": inv_state, "authority": inv_field["authority"],
                    "findings": inv_field.get("findings", []),
                    "source": "observed isAttuned flags" if inv_state == "trusted" else None})
+    existing_asks = {question["ask"] for question in qs}
+    for finding in trust.get("asks") or []:
+        ask = finding.get("ask")
+        if not ask or ask in existing_asks:
+            continue
+        affected = finding.get("affects") or []
+        affected_states = [_family_assessment(trust, family)[0]
+                           for family in affected]
+        state_rank = {"trusted": 0, "confirm": 1, "unsupported": 2,
+                      "unknown": 3, "invalid": 4}
+        state = max(affected_states, key=lambda item: state_rank[item]) \
+            if affected_states else "confirm"
+        qs.append({
+            "ask": ask,
+            "expect": None,
+            "state": state,
+            "authority": "player",
+            "findings": [finding.get("code")] if finding.get("code") else [],
+            "affects": affected,
+            "note": "sheet-specific finding — reconcile before relying on affected fields",
+        })
+        existing_asks.add(ask)
     unh = (d.get("unhandled") or {}).get("items") or []
     return {"meta": d.get("meta"), "trust": trust, "questions": qs,
             "caveat": ("unhandled patterns present — expected values in their "
