@@ -1,54 +1,80 @@
-# charactercheck
-Deterministic D&D Beyond character-sheet derivation with provenance. Every
-stat computed and traceable; every unhandled case named with its blast
-radius; player-authority live state is never guessed. Install: pip install
-charactercheck. CLI: charactercheck derive|seatpack|stance|quiz|diff|report
-<ddb-url-or-json>. MCP server: io.github.chaoz23/charactercheck. Exit codes:
-0 clean, 1 lint, 2 unhandled-content (honest refusal, not failure). Ask it:
-"what is this character's AC and why", "everything a seat needs at session
-start", "what changed on this sheet since intake".
+# CharacterCheck
 
-## A live example
+Experimental, read-only compiler for selected D&D Beyond character fields.
+It emits mechanical context, provenance, findings, and immutable snapshots.
+It is not complete character validation, encounter/world/session authority, or
+proof of action legality. It exposes no mutations.
 
-https://www.dndbeyond.com/characters/150991647 is a public D&D Beyond character kept public as this project's worked
-example. It deliberately exercises all three trust lanes at once (armour not
-flagged equipped, spell slots absent from the payload, no prepared list, one
-unsupported healing-group modifier), so `derive <ref> --brief` on it shows the
-whole contract in eight lines. The unsupported lane comes from one deliberate
-NEGATIVE CASE: a homebrew feat outside the SRD 5.2.1 table. That is intentional
-and documented — a tidy all-SRD character would only ever demonstrate the happy
-path, and real sheets are full of homebrew.
+STATUS:
+  This is the unreleased post-0.6.2 source contract. PyPI still exposes
+  historical 0.6.2 behavior without these safeguards; active historical MCP
+  Registry entries have unpinned runtime arguments that can resolve to it. Run
+  the checkout directly until a newly versioned remediation is published.
 
-## Bootstrapping
+START OFFLINE:
+  python3 -m charactercheck selftest
+  python3 -m charactercheck derive examples/sample-character.json --brief
 
-`charactercheck selftest` derives a bundled sample character offline and prints
-PASS/FAIL per check. Run it first: it proves the engine works without a network,
-a D&D Beyond account, or a character of your own, which isolates any remaining
-problem to access rather than to the tool. `AGENTS.md` at the repo root is the
-one-page agent guide.
+INPUT:
+  Exact positive numeric ID, exact HTTPS dndbeyond.com/characters/<id>, a
+  direct local JSON file where allowed, or CharacterSnapshotV1. Inputs are
+  size/depth/count bounded and structurally validated. Raw local/remote payloads
+  are limited to 8 MiB; local snapshot envelopes to 16 MiB. Missing paths never
+  become IDs.
 
-## The trust map (v0.6)
+TRUST:
+  Read meta, then canonical fields for every value. Use trust for family routing
+  and lint/unhandled for evidence and questions. "trusted" means no detected
+  finding within supported coverage, not globally safe. Family ask_player maps
+  to field confirm. Do not improvise through unsupported/unknown/invalid.
 
-`derive` returns a `trust` block routing every family into exactly one lane:
-`trusted` (safe to state), `ask_player` (in doubt — the resolving question is
-included), `unsupported` (content the engine does not model targets this
-family). Unsupported content is never applied, so the rest of the arithmetic
-stands. Every lint entry is {code, message, ask, affects} and carries a
-question a GM can read aloud. `--brief` renders it chat-sized; `intake` emits a
-pre-session packet.
+PRIVACY:
+  Defaults omit account identifiers, linked images, notes, appearance, and
+  persona. Explicit trusted local CLI/library persona opt-in is bounded
+  untrusted data. MCP exposes no persona, local-file access, authentication,
+  role enforcement, or mutation.
 
-## Failure contract (read this before filing anything)
+SNAPSHOT/DIFF:
+  charactercheck snapshot <ref> > baseline.json
+  charactercheck diff <ref> --baseline baseline.json
+  normalized_data_hash is the default privacy-filtered mechanical revision;
+  snapshot_character_hash covers the stored filtered character. Three coverage
+  booleans disclose only that unclassified top-level/nested fields or unsafe
+  semantic values were omitted. Derived views repeat them under
+  meta.source_coverage. Unknown-scope omission routes every family to unknown;
+  fixed root-item semantic gaps route affected families to unsupported.
+  Non-item and nested-item gaps remain global unknown until their dependencies
+  are classified.
+  Distinct comparisons also become indeterminate at `$` when private modifier-
+  restriction semantics were omitted. Same mechanical revision plus a named
+  persona/non-mechanical delta is mechanically_unchanged; only exact identity is
+  unchanged without findings. Comparisons apply nothing.
+  Hashes are unkeyed identifiers, not signatures, provenance, or authorization.
 
-Exit codes: 0 derived clean · 1 lint findings · 2 unhandled content (NOT a
-failure — output is complete and usable) · **3 could not retrieve the sheet**.
+LIBRARY:
+  Use derive(ref) or stance(ref) for canonical trust-bearing views. Plain
+  fetch(ref) and raw engine.build fail with source_coverage if source values
+  were omitted; build is not a package export. Never strip coverage or fixed
+  _semanticGaps by recomposing a plain character dict.
 
-Exit 3 prints structured JSON with a stable `error` kind and a one-sentence
-`action`: not_public, not_found, bad_ref, network, rate_limited, bad_json,
-upstream. There is never a traceback.
+ECOSYSTEM:
+  Adapter IDs/names come from a pinned offline DDB config registry; membership
+  does not mean mechanics are implemented, and runtime performs no config
+  fetch. CharacterCheck is a DDB-to-agent compiler/conformance facade, not a
+  complete rules engine. DDB, Foundry, and other outputs are attributed claims
+  or oracles; unexplained disagreement remains non-trusted conflict.
 
-Private character? charactercheck never asks for credentials. Either set
-Character Privacy to Public on D&D Beyond, or save the character-service JSON
-and pass the file path — that needs no permissions at all.
+EXIT (command-specific):
+  derive/report: 0 no lint/unhandled, 1 lint only, 2 any unhandled record.
+  diff: 0 complete and unchanged, 1 any named change or indeterminate omitted-
+  source comparison. stance/qa/snapshot/quiz/seatpack/intake: 0 when emitted;
+  inspect their fields/findings. selftest: 0 pass, 1 fail. doctor and structured
+  runtime/input failures: 3. Unsupported command-specific flags are structured
+  bad_flag exit 2; argparse syntax/usage errors are plain-text exit 2. Never
+  treat exit 0 or 2 as autonomous readiness.
 
-Stuck? `charactercheck doctor <ref>` checks python, DNS, outbound HTTPS and
-character reachability, and prints the remedy on the first failing check.
+MCP TOOLS:
+  derive, stance, qa, diff, snapshot, seatpack, quiz, report, intake,
+  selftest, doctor.
+
+Read README.md, SUPPORT.md, PRIVACY.md, SECURITY.md, and AGENTS.md.

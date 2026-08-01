@@ -14,7 +14,7 @@ class TestQuiz(unittest.TestCase):
         hp_now = next(x for x in q["questions"] if "right now" in x["ask"])
         self.assertIsNone(hp_now["expect"])
         self.assertEqual(hp_now["authority"], "player")
-        self.assertIn("SILENT", q["contract"])
+        self.assertIn("read-only", q["contract"])
 
     def test_quiz_caveat_matches_unhandled_lane(self):
         q = engine.quiz(FIX)
@@ -24,9 +24,9 @@ class TestQuiz(unittest.TestCase):
         else:
             self.assertIsNone(q["caveat"])
 
-    def test_unhandled_items_carry_verbatim_text_field(self):
+    def test_unhandled_items_omit_verbatim_source_text(self):
         for item in engine.derive(FIX)["unhandled"]["items"]:
-            self.assertIn("text", item)
+            self.assertEqual(item["source_text"], "omitted_by_default")
 
 
 if __name__ == "__main__":

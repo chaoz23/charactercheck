@@ -1,67 +1,146 @@
 {
- "name": "charactercheck",
- "version": "0.6.2",
- "description": "Deterministic D&D Beyond character-sheet derivation with provenance. Input: a public DDB character URL/id (or saved v5 JSON). Output: derived stats where every value carries its arithmetic, plus honest lanes: 'unhandled' (recognized-but-unmodeled data, named) and 'lint' (sheet inconsistencies).",
- "install": "pip install charactercheck  (or: uvx charactercheck ...)",
- "commands": {
-  "charactercheck derive <ref>": "full derived character as JSON (the main entry point)",
-  "charactercheck stance <ref>": "pre-combat: hands, AC states with costs, attack lines",
-  "charactercheck seatpack <ref> [--for-dm]": "everything a seat needs before a session",
-  "charactercheck quiz <ref>": "settlement questions the GM asks aloud, with expected values",
-  "charactercheck diff <ref> --baseline <snapshot.json>": "what the player changed mid-session (state vs build vs impossible)",
-  "charactercheck report <ref>": "unhandled + lint only — resolve these before play",
-  "charactercheck qa <ref> [--full]": "the 100-question QA pass",
-  "charactercheck doctor [ref] [--json]": "diagnose why it is not working: python, DNS, outbound HTTPS, and character reachability. PASS/FAIL per check with the remedy on the first failure. Exit 0 all-pass, 3 otherwise.",
-  "charactercheck --schema": "machine-readable I/O contract",
-  "charactercheck selftest": "prove the engine works offline against a bundled sample character — no network, no account, no character required. Exit 0 pass, 1 fail. Run this FIRST when bootstrapping: it separates 'the tool is broken' from 'I cannot reach that character'.",
-  "charactercheck intake <ref> [--for-dm]": "one pre-session packet: what is settled, what must be asked before dice, player-authority fields, and a baseline-snapshot hint. Composes seatpack + the trust map.",
-  "charactercheck derive <ref> --brief": "chat-sized deterministic summary: the trust lanes plus AC/HP/init. Prefer this over asking a model to summarise the JSON — a summary can drift, this cannot."
- },
- "exit_codes": {
-  "0": "derived clean",
-  "1": "lint findings — the sheet disagrees with itself; output still usable",
-  "2": "unhandled content present — NOT a failure; output complete and usable, resolve named items with a human",
-  "3": "could not retrieve the sheet — read the 'action' field; private sheet, bad id, or no network"
- },
- "flags": [
-  "--pipe (refs on stdin)",
-  "--schema",
-  "--full"
- ],
- "mcp": {
-  "command": "charactercheck-mcp",
-  "tools": [
-   "derive",
-   "stance",
-   "qa",
-   "report"
-  ]
- },
- "boundaries": "Derivation and extraction only: no rules adjudication (see srdcheck), no auth/cookies (public sheets only), no VTT output, no homebrew content database. Unrecognized data is reported by name, never silently defaulted.",
- "errors": {
-  "note": "Every failure prints structured JSON with a stable 'error' kind and a one-sentence 'action'. Never a traceback. charactercheck never asks for credentials: a private sheet is answered by making it public or by passing a saved character-service JSON file.",
-  "kinds": [
-   "not_public",
-   "not_found",
-   "bad_ref",
-   "network",
-   "rate_limited",
-   "bad_json",
-   "upstream"
-  ]
- },
- "trust": {
-  "note": "`derive` returns a `trust` block routing every family into exactly one lane. Read this before stating a number to a human.",
-  "lanes": {
-   "trusted": "nothing outstanding touches it — safe to state",
-   "ask_player": "derived, but a lint puts it in doubt; the resolving question is in `asks`",
-   "unsupported": "content the engine does not model targets this family — say what is missing rather than stating a value"
+  "name": "charactercheck",
+  "version": "0.6.2",
+  "status": "unreleased-post-0.6.2-source-contract",
+  "distribution": {
+    "source": "This manifest describes the unreleased checkout containing it.",
+    "published": "PyPI latest is the historical 0.6.2 artifact and does not contain this safety contract.",
+    "version_warning": "The checkout temporarily retains 0.6.2 metadata; assign a new version before any publication."
   },
-  "lint_shape": "each lint entry is {code, message, ask, affects} — `ask` is a question a GM can read aloud; `affects` routes it into ask_player"
- },
- "example_character": {
-  "ref": "https://www.dndbeyond.com/characters/150991647",
-  "note": "Public, and kept public as this project's worked example. Exercises all three trust lanes at once — armour not flagged equipped, spell slots absent from the payload, no prepared list, one unsupported healing-group modifier. Use it to see the whole contract in one call.",
-  "negative_case": "DELIBERATE AND EXPECTED: this character carries one homebrew feat ('Dark Bargain') outside the SRD 5.2.1 feat table, which is what produces the `unsupported` lane. Do not treat it as a defect in the example — it is what makes the example demonstrate the honesty machinery rather than just the happy path. Tests assert the negative case is still present."
- }
+  "description": "Unreleased read-only compilation of selected D&D Beyond character fields into mechanical context, canonical assessments, provenance, findings, and versioned snapshots.",
+  "boundary": "Not complete rules validation, encounter/world/session state, role enforcement, or proof of action legality. No mutations are exposed.",
+  "install": "pip install charactercheck installs the historical published 0.6.2 contract; run the checkout with python3 -m charactercheck for this unreleased contract",
+  "example": "python3 -m charactercheck derive examples/sample-character.json --brief",
+  "commands": {
+    "charactercheck derive <ref> [--brief]": "selected derivation plus canonical fields, findings, trust, and observation metadata",
+    "charactercheck stance <ref>": "stance envelope with canonical assessment, findings, trust, and observation metadata",
+    "charactercheck qa <ref> [--full]": "100-row Coverage Inventory with closed states; not validity",
+    "charactercheck report <ref> [--brief]": "canonical fields/trust plus findings and identified feature names",
+    "charactercheck snapshot <ref>": "export CharacterSnapshotV1 with separate default-mechanical, stored-character, and whole-envelope hashes plus omission coverage",
+    "charactercheck diff <ref> --baseline <snapshot.json>": "classify supported changes; distinct snapshots with any omitted-source coverage or restriction semantics fail closed as indeterminate at $",
+    "charactercheck quiz <ref>": "settlement questions with conservative expected values",
+    "charactercheck seatpack <ref> [--for-dm] [--include-persona]": "privacy-minimized read-only context; --for-dm marks all player-authority live values; persona is local explicit opt-in",
+    "charactercheck intake <ref> [--for-dm] [--include-persona]": "pre-session context, questions, trust and authority boundary; --for-dm is redaction, not authorization",
+    "charactercheck selftest": "offline installation and selected-derivation smoke test",
+    "charactercheck doctor [ref] [--json]": "redacted runtime/network/source diagnosis",
+    "charactercheck --schema": "machine-readable CLI contract"
+  },
+  "input": {
+    "accepted": [
+      "positive 1-20 digit numeric id with no leading zero",
+      "exact HTTPS dndbeyond.com/characters/<id>",
+      "direct regular local JSON file where enabled",
+      "CharacterSnapshotV1"
+    ],
+    "limits": "Raw local/remote character payloads: 8 MiB. Local CharacterSnapshotV1 envelopes: 16 MiB. MCP request lines: 8 MiB. All JSON also has bounded depth, nodes, strings, collections, inventory, modifiers, and container traversal."
+  },
+  "exit_codes": {
+    "0": "command-specific success; successful projections can still contain non-trusted fields",
+    "1": "derive/report lint-only, diff named change or indeterminate comparison, or selftest failure",
+    "2": "derive/report has an unhandled record, or an explicit compatibility flag guard failed; argparse usage errors also use 2",
+    "3": "structured retrieval/input/snapshot/internal failure, or a failed doctor check"
+  },
+  "command_exit_contracts": {
+    "derive/report": "0 no lint/unhandled; 1 lint with no unhandled; 2 one or more unhandled records; 3 structured failure",
+    "diff": "0 complete comparison with no detected change; 1 any named change or indeterminate omitted-source/restriction comparison; 3 structured failure",
+    "stance/qa/snapshot/quiz/seatpack/intake": "0 when emitted even if fields/findings require attention; 3 structured failure",
+    "selftest": "0 pass; 1 fail",
+    "doctor": "0 all checks pass; 3 otherwise",
+    "usage": "argparse errors are plain text and exit 2; unsupported command-specific flag combinations are structured and exit 2"
+  },
+  "privacy": {
+    "default": "mechanical; account identifiers, linked images, appearance, notes, and persona omitted",
+    "persona": "explicit authorized local CLI/library opt-in only (--include-persona in the CLI); bounded and marked untrusted",
+    "mcp": "no persona opt-in and no host-local file access",
+    "consent": "public sharing does not imply model transfer, persistence, training, recurring tests, or publication"
+  },
+  "snapshot": {
+    "normalized_data_hash": "canonical hash of the default privacy-filtered mechanical character; used as source_revision and excludes persona and omitted fields",
+    "snapshot_character_hash": "canonical hash of the exact filtered character stored in the snapshot; includes persona only after explicit local opt-in",
+    "snapshot_id": "hash of the complete envelope except its own value",
+    "observed_at": "canonical UTC RFC 3339 observation metadata; not a trusted or attested timestamp",
+    "authenticity": "unkeyed hashes are integrity/content identifiers only; they are not signatures, source attestations, trusted timestamps, or authorization evidence",
+    "coverage": {
+      "unclassified_top_level_omitted": "boolean only; no omitted name or value is serialized",
+      "unclassified_nested_omitted": "boolean only; no omitted name or value is serialized",
+      "semantic_values_omitted": "boolean only; fixed field-owned semantic-gap codes route the impact without serializing omitted text"
+    },
+    "derive_invariant": "the same three booleans appear under meta.source_coverage; either unclassified-field flag adds source:unclassified-fields-omitted and routes every mechanical family to unknown, while semantic-value omissions retain fixed gap codes that route known root-item impact to unsupported and unscoped non-item or nested-item impact to global unknown",
+    "diff_invariant": "distinct snapshots with any coverage boolean true or omitted modifier restriction semantics emit $ in unsupported_changes and relationship indeterminate; same-revision named non-mechanical deltas are mechanically_unchanged; exact identity is unchanged"
+  },
+  "library": {
+    "canonical": "package-level derive(ref) and stance(ref) preserve trust and source coverage",
+    "plain_fetch": "fetch(ref) raises source_coverage when returning a plain character would discard omission metadata",
+    "raw_workspace": "build is not package-exported; engine.build also raises source_coverage on incomplete raw sources"
+  },
+  "mcp": {
+    "command": "charactercheck-mcp",
+    "transport": "stdio",
+    "protocol_version": "2025-11-25",
+    "request_limit_bytes": 8388608,
+    "response_limit_bytes": 4194304,
+    "tools": [
+      "derive",
+      "stance",
+      "qa",
+      "diff",
+      "snapshot",
+      "seatpack",
+      "quiz",
+      "report",
+      "intake",
+      "selftest",
+      "doctor"
+    ],
+    "result_contract": "generic bounded text plus the tool object in structuredContent",
+    "capabilities": "read-only public remote refs; no host-local files, persona opt-in, authenticated principal, role enforcement, or mutation"
+  },
+  "trust": {
+    "trusted": "no detected finding within supported coverage; not a global safety claim",
+    "ask_player": "known ambiguity requires the supplied human question",
+    "unsupported": "observed content has no applicable handler for that family",
+    "unknown": "observed content has unknown target scope; derived families fail closed",
+    "invalid": "known content is malformed or contradictory and the value must be declined",
+    "canonical_field_states": [
+      "trusted",
+      "confirm",
+      "unsupported",
+      "unknown",
+      "invalid",
+      "not_applicable"
+    ],
+    "precedence": "invalid > unknown > unsupported > confirm > trusted; not_applicable is orthogonal",
+    "field_record": "value/state/formula/inputs/sources/rules_profile/findings/confidence/authority/as_of/stale/sensitivity",
+    "autonomous_ready": false
+  },
+  "errors": {
+    "contract": "recognized runtime/input failures use safe structured error/message/action/retryable/exit_code with refs, paths, values, and raw detail omitted; argparse usage errors remain plain text",
+    "kinds": [
+      "bad_flag",
+      "not_public",
+      "not_found",
+      "bad_ref",
+      "network",
+      "rate_limited",
+      "bad_json",
+      "upstream",
+      "missing_file",
+      "local_files_disabled",
+      "file_read",
+      "file_policy",
+      "invalid_character",
+      "input_too_large",
+      "input_too_deep",
+      "input_limit",
+      "cyclic_reference",
+      "persona_requires_local",
+      "snapshot_schema",
+      "snapshot_integrity",
+      "snapshot_required",
+      "snapshot_source_mismatch",
+      "source_coverage",
+      "output_too_large",
+      "internal_error"
+    ]
+  }
 }

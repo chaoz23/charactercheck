@@ -1,0 +1,64 @@
+{
+  "data": {
+    "id": 999999999999999999,
+    "username": "ACCOUNT_CANARY_DO_NOT_EMIT",
+    "name": "Synthetic Canary",
+    "stats": [
+      {"id": 1, "value": 10},
+      {"id": 2, "value": 10},
+      {"id": 3, "value": 10},
+      {"id": 4, "value": 10},
+      {"id": 5, "value": 10},
+      {"id": 6, "value": 10}
+    ],
+    "classes": [
+      {
+        "level": 1,
+        "hitDiceUsed": 0,
+        "definition": {
+          "name": "Fighter",
+          "hitDice": 10,
+          "spellCastingAbilityId": null
+        },
+        "classFeatures": [],
+        "subclassDefinition": null
+      }
+    ],
+    "inventory": [],
+    "modifiers": {},
+    "baseHitPoints": 10,
+    "removedHitPoints": 0,
+    "temporaryHitPoints": 0,
+    "inspiration": false,
+    "race": {
+      "fullName": "Human",
+      "weightSpeeds": {"normal": {"walk": 30}},
+      "racialTraits": []
+    },
+    "background": {"definition": {"name": "Guard"}},
+    "actions": {},
+    "spells": {},
+    "classSpells": [],
+    "spellSlots": [],
+    "pactMagic": [],
+    "characterValues": [],
+    "conditions": [],
+    "deathSaves": {"successCount": 0, "failCount": 0},
+    "feats": [],
+    "customItems": [],
+    "currencies": {},
+    "notes": {"organizations": "ORG_CANARY_DO_NOT_EMIT"},
+    "traits": {
+      "personalityTraits": "PERSONA_CANARY_DO_NOT_EMIT",
+      "ideals": "IDEAL_CANARY_DO_NOT_EMIT",
+      "bonds": "BOND_CANARY_DO_NOT_EMIT",
+      "flaws": "FLAW_CANARY_DO_NOT_EMIT"
+    },
+    "age": 987,
+    "height": "APPEARANCE_CANARY_DO_NOT_EMIT",
+    "weight": 123,
+    "hair": "HAIR_CANARY_DO_NOT_EMIT",
+    "skin": "SKIN_CANARY_DO_NOT_EMIT",
+    "eyes": "EYES_CANARY_DO_NOT_EMIT"
+  }
+}

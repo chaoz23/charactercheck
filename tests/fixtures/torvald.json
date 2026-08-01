@@ -1,6 +1,5 @@
 {
  "data": {
-  "username": "fixture-bot",
   "overrideStats": [
    {
     "id": 1,
@@ -60,12 +59,6 @@
   "inspiration": false,
   "alignmentId": 2,
   "currentXp": 900,
-  "age": 30,
-  "height": "5'10\"",
-  "weight": 170,
-  "hair": "brown",
-  "skin": "tan",
-  "eyes": "grey",
   "deathSaves": {
    "successCount": null,
    "failCount": null
@@ -91,15 +84,6 @@
    "race": [],
    "item": [],
    "feat": []
-  },
-  "notes": {
-   "organizations": null
-  },
-  "traits": {
-   "personalityTraits": "steady",
-   "ideals": "duty",
-   "bonds": "the order",
-   "flaws": "stubborn"
   },
   "currencies": {
    "cp": 0,

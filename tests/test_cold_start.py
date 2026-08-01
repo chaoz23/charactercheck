@@ -1,25 +1,9 @@
-"""The cold-start contract: an agent given only the README must succeed, or
-fail in a way it can act on.
+"""Offline cold-start and boundary contract tests."""
 
-This suite exists because of a measured failure, not a hypothetical one. On
-2026-07-31 a cold-boot probe ran the three character refs an agent actually
-produces. A public character derived correctly. The other three — a private
-sheet, a missing id, a malformed ref — each produced a fifteen-line Python
-traceback and **exit code 1**.
-
-Exit 1 is documented as *"lint findings — the sheet looks inconsistent."* So a
-permission error was returning the code that means "this sheet has
-inconsistencies", and an agent obeying the published contract would read a
-private character as a dirty one and carry on. That is worse than crashing.
-
-Network-touching checks are marked and skipped when offline, so this suite is
-useful in CI and on a plane.
-"""
-
+import copy
 import io
 import json
 import os
-import socket
 import sys
 import unittest
 import urllib.error
@@ -28,21 +12,8 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from charactercheck import errors  # noqa: E402
+from charactercheck import engine, errors  # noqa: E402
 from charactercheck.cli import main  # noqa: E402
-
-
-def _online():
-    try:
-        socket.getaddrinfo("character-service.dndbeyond.com", 443)
-        return True
-    except OSError:
-        return False
-
-
-ONLINE = _online()
-needs_net = unittest.skipUnless(ONLINE, "no network")
-
 
 def run(argv):
     """Run the CLI, capturing stdout and the exit code."""
@@ -143,15 +114,20 @@ class TestDoctor(unittest.TestCase):
     """One command that turns 'it doesn't work' into a diagnosis."""
 
     def test_doctor_runs_without_a_ref(self):
-        code, out = run(["doctor", "--json"])
+        with mock.patch("socket.getaddrinfo", return_value=[("synthetic",)]), \
+                mock.patch("urllib.request.urlopen",
+                           side_effect=urllib.error.HTTPError(
+                               "synthetic", 404, "synthetic", {}, None)):
+            code, out = run(["doctor", "--json"])
         self.assertIn(code, (0, errors.EXIT_FETCH))
         res = json.loads(out)
         names = [c["check"] for c in res["checks"]]
         self.assertIn("python", names)
 
     def test_doctor_reports_the_action_on_the_failing_check(self):
-        with mock.patch("charactercheck.engine.fetch",
-                        side_effect=errors.not_public("x")):
+        with mock.patch("socket.getaddrinfo", side_effect=OSError("offline")), \
+                mock.patch("charactercheck.engine.fetch_loaded",
+                           side_effect=errors.not_public("x")):
             res = errors.doctor("12345")
         bad = [c for c in res["checks"] if not c["ok"]]
         self.assertTrue(bad)
@@ -159,8 +135,9 @@ class TestDoctor(unittest.TestCase):
         self.assertFalse(res["ok"])
 
     def test_doctor_text_output_is_readable(self):
-        with mock.patch("charactercheck.engine.fetch",
-                        side_effect=errors.not_public("x")):
+        with mock.patch("socket.getaddrinfo", side_effect=OSError("offline")), \
+                mock.patch("charactercheck.engine.fetch_loaded",
+                           side_effect=errors.not_public("x")):
             text = errors.render_doctor(errors.doctor("12345"))
         self.assertIn("FAIL", text)
         self.assertIn("->", text)
@@ -218,17 +195,20 @@ class TestReadmeContract(unittest.TestCase):
 
     def test_readme_documents_exit_3(self):
         self.assertIn("3", self.readme)
-        self.assertIn("could not retrieve the sheet", self.readme.lower())
+        self.assertIn("retrieval", self.readme.lower())
 
-    def test_readme_documents_every_error_kind(self):
+    def test_machine_contract_documents_error_kinds(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "tool.json")) as stream:
+            kinds = set(json.load(stream)["errors"]["kinds"])
         for kind in ("not_public", "not_found", "bad_ref", "network",
-                     "rate_limited", "bad_json", "upstream"):
-            self.assertIn(kind, self.readme, f"README omits {kind}")
+                     "rate_limited", "bad_json", "upstream", "internal_error"):
+            self.assertIn(kind, kinds)
 
     def test_readme_names_the_private_sheet_answer(self):
         low = self.readme.lower()
-        self.assertIn("character privacy", low)
-        self.assertIn("never asks for credentials", low)
+        self.assertIn("no credentials", low)
+        self.assertIn("saved character-service json", low)
 
     def test_readme_leads_with_the_two_command_quickstart(self):
         head = self.readme[:self.readme.index("## Why provenance")
@@ -239,28 +219,23 @@ class TestReadmeContract(unittest.TestCase):
         self.assertIn("doctor", head)
 
 
-@needs_net
-class TestLiveUserStory(unittest.TestCase):
-    """The literal user story, against the real service."""
+class TestOfflineUserStory(unittest.TestCase):
+    def test_bundled_character_derives_without_network(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        ref = os.path.join(root, "examples", "sample-character.json")
+        with mock.patch("urllib.request.urlopen",
+                        side_effect=AssertionError("fixture derivation must be offline")):
+            code, out = run(["derive", ref])
+        self.assertIn(code, (0, 1, 2))
+        self.assertIn("identity", json.loads(out))
 
-    PUBLIC = "https://www.dndbeyond.com/characters/150991647"
-
-    def test_a_public_character_derives(self):
-        code, out = run(["derive", self.PUBLIC])
-        self.assertIn(code, (0, 1, 2), "0/1/2 all mean 'you have usable output'")
-        d = json.loads(out)
-        self.assertIn("identity", d)
-        self.assertTrue(d["identity"]["name"])
-
-    def test_a_private_character_is_actionable_not_a_crash(self):
-        code, out = run(["derive", "https://www.dndbeyond.com/characters/1"])
+    def test_private_response_is_actionable_not_a_crash(self):
+        with mock.patch("urllib.request.urlopen",
+                        side_effect=urllib.error.HTTPError("u", 403, "f", {}, None)):
+            code, out = run(["derive", "12345"])
         self.assertEqual(code, errors.EXIT_FETCH)
         self.assertNotIn("Traceback", out)
         self.assertEqual(json.loads(out)["error"], "not_public")
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestContractSurfacesAgree(unittest.TestCase):
@@ -320,6 +295,14 @@ class TestContractSurfacesAgree(unittest.TestCase):
         kinds = set(d.get("errors", {}).get("kinds", []))
         self.assertIn("not_public", kinds)
         self.assertIn("bad_ref", kinds)
+        contracts = d.get("command_exit_contracts", {})
+        self.assertIn("derive/report", contracts)
+        self.assertIn("diff", contracts)
+        self.assertIn("stance/qa/snapshot/quiz/seatpack/intake", contracts)
+        self.assertIn("usage", contracts)
+        manifest_contracts = json.loads(self._read("tool.json")).get(
+            "command_exit_contracts", {})
+        self.assertEqual(contracts, manifest_contracts)
 
     def test_tool_json_lists_every_cli_command(self):
         import re
@@ -427,34 +410,47 @@ class TestSpellSlotOracle(unittest.TestCase):
                         "fully expended but populated must never lint")
 
 
-@needs_net
-class TestSpellLintsAgainstRealCharacters(unittest.TestCase):
-    """Both shapes, against the two live sheets that produced them."""
+class TestSpellLintsAgainstSyntheticCharacters(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "tests", "fixtures", "torvald.json")) as stream:
+            cls.base = json.load(stream)["data"]
 
-    def _lint(self, ref):
-        code, out = run(["derive", ref])
-        # lint entries became structured objects in 0.6.0 so each finding can
-        # carry the question that resolves it; join the messages for matching.
-        return " | ".join(f["message"] for f in json.loads(out)["lint"])
+    def _lint(self, mutate):
+        character = copy.deepcopy(self.base)
+        mutate(character)
+        return " | ".join(f["message"] for f in engine.derive_data(character)["lint"])
 
     def test_cleric_three_with_no_slots_is_flagged_as_a_data_gap(self):
-        lint = self._lint("150991647")
+        lint = self._lint(lambda d: d.update(
+            spellSlots=[{"level": 1, "available": 0, "used": 0},
+                        {"level": 2, "available": 0, "used": 0}]))
         self.assertIn("spell slots missing", lint)
         self.assertIn("caster level 3", lint)
 
     def test_cleric_three_with_only_cantrips_is_flagged_for_prepared(self):
-        self.assertIn("no prepared leveled spells", self._lint("150991647"))
+        def mutate(d):
+            d["spells"]["class"] = [d["spells"]["class"][0]]
+        self.assertIn("no prepared leveled spells", self._lint(mutate))
 
     def test_spent_without_maxima_is_flagged_as_inconsistent(self):
-        lint = self._lint("93177801")
+        lint = self._lint(lambda d: d.update(
+            spellSlots=[{"level": 1, "available": 0, "used": 3}]))
         self.assertIn("spell slots inconsistent", lint)
         self.assertIn("3 spent at L1", lint)
 
     def test_pact_magic_is_diagnosed_separately(self):
-        self.assertIn("pact magic slots inconsistent", self._lint("93177801"))
+        def mutate(d):
+            d["classes"] = [{"level": 3, "hitDiceUsed": 0,
+                              "definition": {"name": "Warlock", "hitDice": 8,
+                                             "spellCastingAbilityId": 6},
+                              "classFeatures": [], "subclassDefinition": None}]
+            d["pactMagic"] = [{"level": 2, "available": 0, "used": 1}]
+        self.assertIn("pact magic slots inconsistent", self._lint(mutate))
 
     def test_a_caster_with_prepared_spells_is_not_nagged(self):
-        self.assertNotIn("no prepared leveled spells", self._lint("93177801"))
+        self.assertNotIn("no prepared leveled spells", self._lint(lambda d: None))
 
 
 class TestBootstrapWithoutTheWorld(unittest.TestCase):
@@ -499,5 +495,9 @@ class TestBootstrapWithoutTheWorld(unittest.TestCase):
             text = f.read()
         self.assertIn("selftest", text)
         self.assertIn("exit", text.lower())
-        # the mistake we most need to pre-empt
-        self.assertIn("treating exit 2 as failure", text)
+        self.assertIn("exit 2", text.lower())
+        self.assertIn("not a retry", text.lower())
+
+
+if __name__ == "__main__":
+    unittest.main()

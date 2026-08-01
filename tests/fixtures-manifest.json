@@ -1,0 +1,44 @@
+{
+  "schema": "charactercheck.synthetic-fixture-manifest",
+  "schema_version": 1,
+  "review_owner": "project maintainer",
+  "review_date": "2026-07-31",
+  "fixtures": [
+    {
+      "id": "torvald-clean",
+      "canonical_file": "tests/fixtures/torvald.json",
+      "copies": [
+        "examples/sample-character.json",
+        "charactercheck/sample-character.json"
+      ],
+      "origin": "project_authored_synthetic",
+      "derived_from_live_sheet": false,
+      "rights": ["test", "package", "redistribute", "public-documentation"],
+      "source_schema": "ddb-character-service-v5.partial",
+      "permitted_uses": ["offline-test", "smoke-test", "documentation"],
+      "sensitive_canary": false
+    },
+    {
+      "id": "vexa-uncertain",
+      "canonical_file": "tests/fixtures/vexa.json",
+      "copies": [],
+      "origin": "project_authored_synthetic",
+      "derived_from_live_sheet": false,
+      "rights": ["test", "redistribute"],
+      "source_schema": "ddb-character-service-v5.partial",
+      "permitted_uses": ["offline-test", "uncertainty-test"],
+      "sensitive_canary": false
+    },
+    {
+      "id": "privacy-canary",
+      "canonical_file": "tests/privacy/sensitive-canary.json",
+      "copies": [],
+      "origin": "project_authored_synthetic",
+      "derived_from_live_sheet": false,
+      "rights": ["test", "redistribute"],
+      "source_schema": "ddb-character-service-v5.partial",
+      "permitted_uses": ["privacy-redaction-test"],
+      "sensitive_canary": true
+    }
+  ]
+}
