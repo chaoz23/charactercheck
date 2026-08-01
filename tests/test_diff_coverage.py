@@ -193,7 +193,8 @@ class TestRevisionFallbackAndCLIExit(unittest.TestCase):
         self.assertTrue(direct["meta"]["changes_present"])
         self.assertIn("$", named_fields(direct))
 
-        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+        with tempfile.TemporaryDirectory(
+                dir=os.path.realpath(tempfile.gettempdir())) as directory:
             baseline_path = os.path.join(directory, "baseline.json")
             candidate_path = os.path.join(directory, "candidate.json")
             with open(baseline_path, "w", encoding="utf-8") as stream:

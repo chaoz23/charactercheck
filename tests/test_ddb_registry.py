@@ -27,7 +27,8 @@ class RegistryFile:
         self.path = None
 
     def __enter__(self):
-        self.directory = tempfile.TemporaryDirectory(dir="/private/tmp")
+        self.directory = tempfile.TemporaryDirectory(
+            dir=str(Path(tempfile.gettempdir()).resolve()))
         self.path = Path(self.directory.name) / "registry.json"
         if isinstance(self.contents, str):
             serialized = self.contents

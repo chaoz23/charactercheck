@@ -255,7 +255,8 @@ class TestDefaultPrivacy(unittest.TestCase):
         self.assertTrue(snapshot["source"]["coverage"][
             "unclassified_nested_omitted"])
 
-        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+        with tempfile.TemporaryDirectory(
+                dir=os.path.realpath(tempfile.gettempdir())) as directory:
             path = os.path.join(directory, "snapshot.json")
             with open(path, "w", encoding="utf-8") as stream:
                 json.dump(snapshot, stream)
@@ -276,7 +277,8 @@ class TestDefaultPrivacy(unittest.TestCase):
         character["classes"][0]["definition"][
             "futureMechanicalCanary"] = "SCHEMA_DRIFT_VALUE_DO_NOT_EMIT"
 
-        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+        with tempfile.TemporaryDirectory(
+                dir=os.path.realpath(tempfile.gettempdir())) as directory:
             path = os.path.join(directory, "character.json")
             with open(path, "w", encoding="utf-8") as stream:
                 json.dump({"data": character}, stream)
@@ -319,7 +321,8 @@ class TestDefaultPrivacy(unittest.TestCase):
         self.assertEqual(caught.exception.kind, "source_coverage")
         self.assertFalse(hasattr(charactercheck, "build"))
 
-        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+        with tempfile.TemporaryDirectory(
+                dir=os.path.realpath(tempfile.gettempdir())) as directory:
             path = os.path.join(directory, "character.json")
             with open(path, "w", encoding="utf-8") as stream:
                 json.dump({"data": character}, stream)

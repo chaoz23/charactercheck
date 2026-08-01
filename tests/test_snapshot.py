@@ -124,7 +124,8 @@ class TestCharacterSnapshotV1(unittest.TestCase):
             "unclassified_nested_omitted"])
         self.assertNotIn("secret", json.dumps(first))
 
-        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+        with tempfile.TemporaryDirectory(
+                dir=os.path.realpath(tempfile.gettempdir())) as directory:
             path = os.path.join(directory, "snapshot.json")
             with open(path, "w", encoding="utf-8") as stream:
                 json.dump(first, stream)
@@ -141,7 +142,8 @@ class TestCharacterSnapshotV1(unittest.TestCase):
         self.assertEqual(first["source"]["coverage"][
             "scoped_mechanical_omissions"], ["speeds"])
 
-        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+        with tempfile.TemporaryDirectory(
+                dir=os.path.realpath(tempfile.gettempdir())) as directory:
             path = os.path.join(directory, "snapshot.json")
             with open(path, "w", encoding="utf-8") as stream:
                 json.dump(first, stream)
@@ -169,7 +171,8 @@ class TestCharacterSnapshotV1(unittest.TestCase):
             raw = stream.read()
         snapshot_body = json.dumps(self.snapshot.to_dict(), indent=1).encode()
         self.assertGreater(len(snapshot_body), len(raw))
-        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+        with tempfile.TemporaryDirectory(
+                dir=os.path.realpath(tempfile.gettempdir())) as directory:
             raw_path = os.path.join(directory, "raw.json")
             snapshot_path = os.path.join(directory, "snapshot.json")
             with open(raw_path, "wb") as stream:
@@ -193,7 +196,8 @@ class TestSnapshotProjections(unittest.TestCase):
         return path
 
     def test_derive_from_snapshot_performs_zero_network_calls(self):
-        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+        with tempfile.TemporaryDirectory(
+                dir=os.path.realpath(tempfile.gettempdir())) as directory:
             path = self._snapshot_file(directory)
             with mock.patch("urllib.request.urlopen",
                             side_effect=AssertionError("snapshot must be offline")):
@@ -210,7 +214,8 @@ class TestSnapshotProjections(unittest.TestCase):
                 self.assertEqual(fetch.call_count, 1)
 
     def test_repeated_views_over_one_snapshot_are_deterministic(self):
-        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+        with tempfile.TemporaryDirectory(
+                dir=os.path.realpath(tempfile.gettempdir())) as directory:
             path = self._snapshot_file(directory)
             first = engine.derive(path)
             second = engine.derive(path)
@@ -246,7 +251,8 @@ class TestSnapshotProjections(unittest.TestCase):
                 self.assertEqual(direct_qa, replay_qa)
 
     def test_cli_snapshot_diff_copy_paste_round_trip(self):
-        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+        with tempfile.TemporaryDirectory(
+                dir=os.path.realpath(tempfile.gettempdir())) as directory:
             baseline = os.path.join(directory, "baseline.json")
             output = io.StringIO()
             with redirect_stdout(output):
@@ -262,7 +268,8 @@ class TestSnapshotProjections(unittest.TestCase):
         self.assertEqual(result["meta"]["relationship"], "unchanged")
 
     def test_diff_rejects_derive_output_and_other_character(self):
-        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+        with tempfile.TemporaryDirectory(
+                dir=os.path.realpath(tempfile.gettempdir())) as directory:
             wrong = os.path.join(directory, "derive.json")
             with open(wrong, "w") as stream:
                 json.dump(engine.derive(FIXTURE), stream)

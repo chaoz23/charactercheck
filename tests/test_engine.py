@@ -157,7 +157,8 @@ class TestV02FeatClassification(unittest.TestCase):
         from charactercheck import qa as Q
         # write temp fixture for qa path
         import tempfile
-        with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+        with tempfile.TemporaryDirectory(
+                dir=os.path.realpath(tempfile.gettempdir())) as directory:
             p = os.path.join(directory, "feat.json")
             with open(p, "w") as stream:
                 json.dump({"data": d}, stream)

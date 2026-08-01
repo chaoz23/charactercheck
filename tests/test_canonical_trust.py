@@ -76,7 +76,8 @@ def unknown_scope_character():
 @contextmanager
 def local_character(character):
     """Expose a character as a direct, non-symlinked local JSON fixture."""
-    with tempfile.TemporaryDirectory(dir="/private/tmp") as directory:
+    with tempfile.TemporaryDirectory(
+            dir=str(Path(tempfile.gettempdir()).resolve())) as directory:
         path = Path(directory) / "character.json"
         path.write_text(json.dumps({"data": character}), encoding="utf-8")
         yield str(path)

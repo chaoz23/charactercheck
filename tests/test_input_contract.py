@@ -77,7 +77,8 @@ class TestStrictReferences(unittest.TestCase):
 
 class TestStrictJSON(unittest.TestCase):
     def _write_bytes(self, body):
-        directory = tempfile.TemporaryDirectory(dir="/private/tmp")
+        directory = tempfile.TemporaryDirectory(
+            dir=os.path.realpath(tempfile.gettempdir()))
         path = os.path.join(directory.name, "input.json")
         with open(path, "wb") as stream:
             stream.write(body)
