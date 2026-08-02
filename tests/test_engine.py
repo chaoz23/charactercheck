@@ -7,6 +7,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from charactercheck import derive, engine  # noqa: E402
 from charactercheck.cli import _exit_code  # noqa: E402
 from charactercheck import qa  # noqa: E402
+from charactercheck.question_catalog import (  # noqa: E402
+    CATALOG_ID, QUESTION_BY_NUMBER, QUESTIONS)
 
 FIX = os.path.join(os.path.dirname(__file__), "fixtures")
 TORVALD = os.path.join(FIX, "torvald.json")
@@ -14,7 +16,7 @@ VEXA = os.path.join(FIX, "vexa.json")
 
 
 class TestTorvald(unittest.TestCase):
-    """The clean single-class case: everything derives, exit 0."""
+    """Single-class fixture: supported values derive with named combat gaps."""
 
     @classmethod
     def setUpClass(cls):
@@ -43,9 +45,12 @@ class TestTorvald(unittest.TestCase):
         self.assertEqual(self.r["resources"][0]["name"], "Channel Divinity")
         self.assertEqual(self.r["resources"][0]["max"], 2)
 
-    def test_clean_exit(self):
-        self.assertEqual(_exit_code(self.r), 0)
-        self.assertEqual(self.r["unhandled"]["items"], [])
+    def test_weapon_gaps_are_honest(self):
+        self.assertEqual(_exit_code(self.r), 2)
+        patterns = {item["pattern"] for item in self.r["unhandled"]["items"]}
+        self.assertIn("item-semantic:weapon_proficiency", patterns)
+        self.assertIn("item-semantic:weapon_property", patterns)
+        self.assertIn("weapons", self.r["trust"]["unsupported"])
         self.assertEqual(self.r["lint"], [])
 
     def test_mastery_from_properties(self):
@@ -73,7 +78,9 @@ class TestVexa(unittest.TestCase):
         self.assertEqual(self.r["combat"]["initiative"]["bonus"], 6)  # dex1 + 5
 
     def test_hp_per_level_bonus(self):
-        self.assertEqual(self.r["combat"]["hp"]["max"], 51)  # 30 + con2*7 + 1*7
+        # The synthetic grant resolves to the four-level Warlock component;
+        # per-level effects do not silently scale across unrelated classes.
+        self.assertEqual(self.r["combat"]["hp"]["max"], 48)  # 30 + con2*7 + 1*4
 
     def test_hex_weapon_designation(self):
         w = [x for x in self.r["combat"]["weapons"] if x["designated"]][0]
@@ -88,8 +95,9 @@ class TestVexa(unittest.TestCase):
 
     def test_container_stash_excluded(self):
         self.assertEqual(self.r["inventory"]["weight_carried"], 47.5)
-        self.assertIn("Chest (Stashed @ Docks): under the third pier",
-                      self.r["inventory"]["stashed_elsewhere"])
+        self.assertEqual(self.r["inventory"]["stashed_elsewhere"]["count"], 1)
+        self.assertEqual(self.r["inventory"]["stashed_elsewhere"]["details"],
+                         "omitted_by_default")
 
     def test_unhandled_lane(self):
         pats = [i["pattern"] for i in self.r["unhandled"]["items"]]
@@ -104,8 +112,38 @@ class TestQA(unittest.TestCase):
     def test_qa_runs_100(self):
         rows = qa.run(TORVALD)
         self.assertEqual(len(rows), 100)
-        ok = sum(1 for q in rows if q[2] == "OK")
-        self.assertGreaterEqual(ok, 85)
+        states = {"trusted", "confirm", "unsupported", "unknown", "invalid",
+                  "not_applicable"}
+        self.assertTrue(all(q[2] in states for q in rows))
+        self.assertTrue(any(q[2] == "trusted" for q in rows))
+        self.assertTrue(any(q[2] == "confirm" for q in rows))
+
+    def test_qa_exposes_the_complete_numbered_question_catalog(self):
+        self.assertEqual(len(QUESTIONS), 100)
+        self.assertEqual(set(QUESTION_BY_NUMBER), set(range(1, 101)))
+        self.assertTrue(all(question.endswith("?") for question in QUESTIONS))
+        data = qa.report_data(TORVALD, full=True)
+        self.assertEqual(data["question_catalog"], {
+            "id": CATALOG_ID,
+            "count": 100,
+            "contract": (
+                "questions organize extraction; row state and authority decide "
+                "whether an answer may be relied upon"),
+        })
+        self.assertEqual(len(data["rows"]), 100)
+        for row in data["rows"]:
+            self.assertEqual(row["question"],
+                             QUESTION_BY_NUMBER[row["number"]])
+
+    def test_qa_text_pairs_each_answer_with_its_question(self):
+        data = qa.report_data(TORVALD, full=True)
+        self.assertIn(
+            "1. What is the character's name? [characterName]",
+            data["text"])
+        self.assertIn(
+            "100. What allies, organizations, or Bastions (2024 DMG) is "
+            "the character affiliated with? [alliesAndOrganizations]",
+            data["text"])
 
 
 if __name__ == "__main__":
@@ -115,36 +153,31 @@ if __name__ == "__main__":
 class TestV02BlastRadius(unittest.TestCase):
     """Cold probe 2026-07-24: 'unhandled names what, not which numbers.'"""
 
-    def test_unmapped_pattern_is_named_but_no_longer_condemns_everything(self):
-        """Superseded 2026-07-31 by live UXR.
-
-        This used to assert that an unmapped pattern cleared NOTHING —
-        `verified_clean == []`. An agent using this at a table objected, and
-        was right: one unhandled `bonus:spell-group-healing` was collapsing the
-        report to "treat all derived values as unverified", so it could not
-        trust AC, saves, skills or HP either. A caveat that covers everything
-        is worth the same as no caveat at all.
-
-        The honest position is narrower: an unhandled modifier is **never
-        applied**, so no derived value read it. It is still named, and the
-        exit code still flips — the caller is told what to go and ask about,
-        not told to distrust arithmetic that provably did not consume it.
-        """
+    def test_unmapped_pattern_is_named_and_fails_closed_globally(self):
+        """An unknown target cannot justify trusting any derived family."""
         r = derive(VEXA)   # planted munch:cookies
         item = [i for i in r["unhandled"]["items"] if i["pattern"] == "munch:cookies"][0]
         self.assertIn("unknown", item["possibly_affects"][0])
         self.assertTrue(item.get("not_applied"))
-        self.assertNotEqual(r["unhandled"]["verified_clean"], [])
+        self.assertEqual(r["unhandled"]["verified_clean"], [])
+        self.assertEqual(r["trust"]["trusted"], [])
+        self.assertEqual(set(r["trust"]["unknown"]), set(engine.TRUST_FAMILIES))
 
-    def test_clean_sheet_has_no_items(self):
+    def test_known_fixture_has_only_declared_weapon_gaps(self):
         r = derive(TORVALD)
-        self.assertEqual(r["unhandled"]["items"], [])
+        patterns = {item["pattern"] for item in r["unhandled"]["items"]}
+        self.assertEqual(patterns, {
+            "item-semantic:weapon_proficiency",
+            "item-semantic:weapon_property",
+        })
+        self.assertEqual(r["trust"]["unknown"], {})
 
 
 class TestV02FeatClassification(unittest.TestCase):
     def test_feats_carry_categories(self):
         import copy
-        d = json.load(open(VEXA))["data"]
+        with open(VEXA) as stream:
+            d = json.load(stream)["data"]
         d["feats"] = [{"definition": {"name": "Alert"}},
                       {"definition": {"name": "Grappler"}},
                       {"definition": {"name": "Fey Touched"}}]
@@ -152,17 +185,21 @@ class TestV02FeatClassification(unittest.TestCase):
         W = E.build(d)
         from charactercheck import qa as Q
         # write temp fixture for qa path
-        import tempfile, os as _os
-        p = tempfile.mktemp(suffix=".json")
-        json.dump({"data": d}, open(p, "w"))
-        rows = Q.run(p)
+        import tempfile
+        with tempfile.TemporaryDirectory(
+                dir=os.path.realpath(tempfile.gettempdir())) as directory:
+            p = os.path.join(directory, "feat.json")
+            with open(p, "w") as stream:
+                json.dump({"data": d}, stream)
+            rows = Q.run(p)
         r68 = [x for x in rows if x[0] == 68][0]
-        self.assertEqual(r68[2], "OK")
+        # Vexa has a global unknown-scope modifier. The row still inventories
+        # the observed feat, but QA may not weaken canonical unknown to trusted.
+        self.assertEqual(r68[2], "unknown")
         self.assertEqual(r68[3], "Alert")
         r69 = [x for x in rows if x[0] == 69][0]
         self.assertIn("Grappler [General]", r69[3])
         self.assertIn("Fey Touched [outside SRD table]", r69[3])
-        _os.unlink(p)
 
 
 class TestV02Diff(unittest.TestCase):
@@ -172,7 +209,8 @@ class TestV02Diff(unittest.TestCase):
     def setUpClass(cls):
         import copy
         from charactercheck.engine import diff_payloads
-        cls.old = json.load(open(VEXA))["data"]
+        with open(VEXA) as stream:
+            cls.old = json.load(stream)["data"]
         cls.dp = staticmethod(diff_payloads)
 
     def _new(self):
@@ -191,7 +229,8 @@ class TestV02Diff(unittest.TestCase):
             if it["definition"]["name"] == "Shield":
                 it["equipped"] = True
         d = self.dp(self.old, n)
-        ch = [c for c in d["build_changes"] if c["field"] == "Shield.equipped"][0]
+        ch = [c for c in d["build_changes"]
+              if c["field"].endswith(".equipped")][0]
         self.assertIn("ac", ch["affects"])
 
     def test_equipping_stashed_gear_is_impossible_lint(self):

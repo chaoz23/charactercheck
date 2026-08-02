@@ -1,44 +1,129 @@
 name: ci
 on: [push, pull_request]
+
+permissions:
+  contents: read
+
 jobs:
   test:
+    name: offline-contract (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.9", "3.12"]
+        python-version: ["3.9", "3.12", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Run tests (stdlib only — no deps to install)
-        run: python -m unittest discover -s tests -v
-      - name: QA scorecard on fixtures
+      - name: Run offline tests with resource leaks promoted
+        env: &offline-network
+          HTTP_PROXY: http://127.0.0.1:9
+          HTTPS_PROXY: http://127.0.0.1:9
+          ALL_PROXY: http://127.0.0.1:9
+          NO_PROXY: ""
+        run: python -W error::ResourceWarning -m unittest discover -s tests -v
+      - name: Coverage Inventory on synthetic fixtures
+        env: *offline-network
         run: |
           python -m charactercheck.cli qa tests/fixtures/torvald.json
           python -m charactercheck.cli qa tests/fixtures/vexa.json
 
   cold-start:
-    # The user story as a gate: an agent given only the repo must succeed, or
-    # fail with something it can act on. Runs against the built wheel in a
-    # clean venv, exactly as a stranger would install it.
+    # Build-tool installation is a packaging bootstrap. After the wheel exists,
+    # installation and every product command below use no package index or live
+    # character service.
+    name: cold wheel (offline runtime)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - name: Build and install the wheel into a clean venv
-        run: |
-          pip install build
-          python -m build --wheel
-          python -m venv /tmp/cold
-          /tmp/cold/bin/pip install dist/*.whl
+      - name: Install the pinned build frontend
+        run: python -m pip install --disable-pip-version-check build==1.5.0
 
-      - name: A malformed ref exits 3 with an actionable JSON error, no traceback
+      - name: Build wheel and source distribution
+        run: |
+          python -m build
+          test "$(find dist -maxdepth 1 -name '*.whl' | wc -l)" -eq 1
+          test "$(find dist -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 1
+
+      - name: Verify source distribution carries its safety contract
+        run: |
+          archive=$(find dist -maxdepth 1 -name '*.tar.gz')
+          tar -tzf "$archive" > /tmp/charactercheck-sdist-files.txt
+          for required in \
+            AGENTS.md CHANGELOG.md LICENSE MIGRATING.md NOTICE PRIVACY.md README.md \
+            SECURITY.md SOURCE_FIELD_ROUTING.md SUPPORT.md THIRD_PARTY_NOTICES.md \
+            llms.txt server.json tool.json \
+            charactercheck/source.py charactercheck/registry.py \
+            charactercheck/ddb_registry.py charactercheck/ddb-config-registry.json \
+            ECOSYSTEM_CONFORMANCE.md \
+            tests/test_input_contract.py tests/test_snapshot.py tests/fixtures-manifest.json
+          do
+            grep -Eq "/${required}$" /tmp/charactercheck-sdist-files.txt || {
+              echo "source distribution is missing ${required}"
+              exit 1
+            }
+          done
+
+      - name: Verify wheel carries runtime and legal notices
+        run: |
+          python - <<'PY'
+          import glob
+          import zipfile
+
+          [wheel] = glob.glob("dist/*.whl")
+          with zipfile.ZipFile(wheel) as archive:
+              members = set(archive.namelist())
+          required = {
+              "charactercheck/registry.py",
+              "charactercheck/ddb_registry.py",
+              "charactercheck/ddb-config-registry.json",
+              "charactercheck/source.py",
+              "charactercheck/sample-character.json",
+          }
+          missing = required - members
+          if missing:
+              raise SystemExit(f"wheel missing runtime files: {sorted(missing)}")
+          for notice in ("LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"):
+              if not any(name.endswith(f".dist-info/licenses/{notice}")
+                         for name in members):
+                  raise SystemExit(f"wheel missing legal notice: {notice}")
+          PY
+
+      - name: Install the wheel without an index
+        run: |
+          python -m venv /tmp/charactercheck-cold
+          /tmp/charactercheck-cold/bin/python -m pip install \
+            --disable-pip-version-check --no-index --no-deps dist/*.whl
+
+      - name: Prove imports resolve from the wheel, not the checkout
+        working-directory: /tmp
+        run: |
+          location=$(/tmp/charactercheck-cold/bin/python -c \
+            'import charactercheck; print(charactercheck.__file__)')
+          echo "$location"
+          case "$location" in
+            /tmp/charactercheck-cold/*) ;;
+            *) echo "import escaped the cold virtual environment"; exit 1 ;;
+          esac
+
+      - name: Installed selftest uses only the bundled synthetic sample
+        working-directory: /tmp
+        env: *offline-network
+        run: /tmp/charactercheck-cold/bin/charactercheck selftest
+
+      - name: A malformed ref exits 3 with a redacted actionable JSON error
+        working-directory: /tmp
+        env: *offline-network
         run: |
           set +e
-          out=$(/tmp/cold/bin/charactercheck derive notanumber 2>&1); code=$?
+          out=$(/tmp/charactercheck-cold/bin/charactercheck derive notanumber 2>&1); code=$?
           set -e
           echo "$out"
           test $code -eq 3 || { echo "expected exit 3, got $code"; exit 1; }
@@ -46,13 +131,22 @@ jobs:
           echo "$out" | grep -q '"action"'
           echo "$out" | grep -qv "Traceback" || { echo "traceback leaked"; exit 1; }
 
-      - name: doctor runs and reports per-check status
+      - name: Installed CLI schema exposes the unreleased source commands
+        working-directory: /tmp
+        env: *offline-network
         run: |
-          set +e
-          /tmp/cold/bin/charactercheck doctor --json > /tmp/doc.json
-          set -e
-          cat /tmp/doc.json
-          grep -q '"check": "python"' /tmp/doc.json
+          /tmp/charactercheck-cold/bin/charactercheck --schema > /tmp/charactercheck-schema.json
+          grep -q '"snapshot"' /tmp/charactercheck-schema.json
+          grep -q '"internal_error"' /tmp/charactercheck-schema.json
 
-      - name: The README carries the contract it promises
-        run: /tmp/cold/bin/python -m unittest discover -s tests -k TestReadmeContract -v
+      - name: Installed MCP initializes and lists tools without network
+        working-directory: /tmp
+        env: *offline-network
+        run: |
+          printf '%s\n%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+            | /tmp/charactercheck-cold/bin/charactercheck-mcp \
+            > /tmp/charactercheck-mcp.jsonl
+          grep -q '"id": 1' /tmp/charactercheck-mcp.jsonl
+          grep -q '"name": "snapshot"' /tmp/charactercheck-mcp.jsonl

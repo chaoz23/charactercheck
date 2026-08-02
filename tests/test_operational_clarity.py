@@ -13,10 +13,10 @@ nowhere.
 import io
 import json
 import os
-import socket
 import sys
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -26,17 +26,6 @@ from charactercheck.cli import main  # noqa: E402
 FIX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 TORVALD = os.path.join(FIX, "torvald.json")
 VEXA = os.path.join(FIX, "vexa.json")
-
-
-def _online():
-    try:
-        socket.getaddrinfo("character-service.dndbeyond.com", 443)
-        return True
-    except OSError:
-        return False
-
-
-needs_net = unittest.skipUnless(_online(), "no network")
 
 
 def run(argv):
@@ -134,9 +123,10 @@ class TestBrief(unittest.TestCase):
         r = engine.derive(TORVALD)
         self.assertEqual(engine.render_brief(r), engine.render_brief(r))
 
-    def test_brief_names_all_three_lanes_when_present(self):
+    def test_brief_names_global_unknown_when_present(self):
         text = engine.render_brief(engine.derive(VEXA)).lower()
-        self.assertIn("trusted:", text)
+        self.assertIn("unknown global scope:", text)
+        self.assertNotIn("trusted:", text)
 
     def test_brief_flag_changes_cli_output(self):
         code, out = run(["derive", TORVALD, "--brief"])
@@ -164,10 +154,11 @@ class TestIntake(unittest.TestCase):
         self.assertIn("seatpack", p)
         self.assertIn("identity", p["seatpack"])
 
-    def test_intake_settled_matches_the_trust_map(self):
+    def test_intake_supported_coverage_matches_the_trust_map(self):
         p = engine.intake(VEXA)
         t = engine.derive(VEXA)["trust"]
-        self.assertEqual(set(p["settled"]), set(t["trusted"]))
+        self.assertEqual(set(p["no_known_issue_in_supported_coverage"]),
+                         set(t["trusted"]))
 
 
 class TestScopeHeld(unittest.TestCase):
@@ -180,8 +171,9 @@ class TestScopeHeld(unittest.TestCase):
 
     def test_no_answerability_command(self):
         import re
-        src = open(os.path.join(os.path.dirname(FIX), "..", "charactercheck",
-                                "cli.py")).read()
+        with open(os.path.join(os.path.dirname(FIX), "..", "charactercheck",
+                               "cli.py")) as stream:
+            src = stream.read()
         choices = re.search(r"choices=\[([^\]]+)\]", src).group(1)
         self.assertNotIn("answerability", choices)
 
@@ -190,25 +182,6 @@ class TestScopeHeld(unittest.TestCase):
         for name in os.listdir(pkg):
             self.assertNotIn("spells", name.lower(),
                              "no spell content database — that is srdcheck's lane")
-
-
-@needs_net
-class TestAgainstLiveSheets(unittest.TestCase):
-    def test_shalia_routes_her_three_open_questions(self):
-        t = engine.derive("150991647")["trust"]
-        self.assertIn("ac", t["ask_player"])
-        self.assertIn("spell_slots", t["ask_player"])
-        self.assertIn("prepared_spells", t["ask_player"])
-        self.assertIn("spell_output", t["unsupported"])
-
-    def test_shalia_still_trusts_the_sheet_math(self):
-        t = engine.derive("150991647")["trust"]
-        for fam in ("hp", "saves", "skills", "spell_save_dc"):
-            self.assertIn(fam, t["trusted"])
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestSecondRoundUXR(unittest.TestCase):
@@ -240,15 +213,19 @@ class TestSecondRoundUXR(unittest.TestCase):
 
     def test_mcp_intake_dispatches(self):
         from charactercheck import mcp
-        out = mcp._call("intake", {"ref": TORVALD})
+        with mock.patch("charactercheck.source.parse_ref", return_value=("id", "12345")), \
+                mock.patch("charactercheck.engine.intake",
+                           return_value={"resolve_before_dice": []}):
+            out = mcp._call("intake", {"ref": "12345"})
         self.assertIn("resolve_before_dice", out)
 
     def test_schema_lists_every_cli_command(self):
         """*"this is exactly where agents look for contract truth."*"""
         import re
         from charactercheck.cli import SCHEMA
-        src = open(os.path.join(os.path.dirname(FIX), "..", "charactercheck",
-                                "cli.py")).read()
+        with open(os.path.join(os.path.dirname(FIX), "..", "charactercheck",
+                               "cli.py")) as stream:
+            src = stream.read()
         choices = re.search(r"choices=\[([^\]]+)\]", src).group(1)
         for c in (x.strip().strip('"').strip("'") for x in choices.split(",")):
             self.assertIn(c, SCHEMA["commands"], f"--schema omits '{c}'")
@@ -262,10 +239,40 @@ class TestSecondRoundUXR(unittest.TestCase):
     def test_brief_on_an_unsupported_command_is_refused_not_ignored(self):
         """Silently ignoring a flag is worse than rejecting it: the caller
         believes it worked."""
-        buf = io.StringIO()
-        with redirect_stdout(buf):
+        buf, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(buf), redirect_stderr(err):
             code = main(["stance", TORVALD, "--brief"])
         self.assertEqual(code, 2)
+
+    def test_for_dm_on_derive_is_refused_not_silently_ignored(self):
+        """A caller requesting DM redaction must never receive the ordinary
+        projection while being led to believe a policy flag took effect."""
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr), \
+                mock.patch("charactercheck.cli.derive",
+                           side_effect=AssertionError("must reject before derive")):
+            code = main(["derive", TORVALD, "--for-dm"])
+        self.assertEqual(code, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        payload = json.loads(stderr.getvalue())
+        self.assertEqual(payload["error"], "bad_flag")
+        self.assertIn("--for-dm", payload["message"])
+
+    def test_command_specific_flags_are_closed_not_silently_ignored(self):
+        cases = (
+            (["derive", TORVALD, "--full"], "--full"),
+            (["derive", TORVALD, "--baseline", TORVALD], "--baseline"),
+            (["derive", TORVALD, "--json"], "--json"),
+            (["selftest", "--pipe"], "--pipe"),
+        )
+        for argv, flag in cases:
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with self.subTest(flag=flag), redirect_stdout(stdout), \
+                    redirect_stderr(stderr):
+                code = main(argv)
+            self.assertEqual(code, 2)
+            self.assertEqual(json.loads(stderr.getvalue())["error"],
+                             "bad_flag")
 
     def test_headline_numbers_carry_their_doubt(self):
         """*"under turn pressure, headline numbers are sticky."*"""
@@ -278,85 +285,11 @@ class TestSecondRoundUXR(unittest.TestCase):
                               f"{label} is in ask_player but the headline does not say so")
 
     def test_verified_clean_says_it_is_not_the_routing(self):
-        """A family can be verified_clean AND in ask_player — Shalia's AC is.
+        """A family can be verified_clean AND in ask_player for uncertain AC.
         The payload must say which one is authoritative."""
         r = engine.derive(VEXA)
         note = (r["unhandled"].get("verified_clean_note") or "").lower()
         self.assertIn("trust", note)
         self.assertIn("lint", note)
-
-
-@needs_net
-class TestSecondRoundAgainstShalia(unittest.TestCase):
-    def test_shalia_headline_flags_ac_for_confirmation(self):
-        text = engine.render_brief(engine.derive("150991647"))
-        self.assertIn("AC 12 (confirm)", text)
-
-    def test_shalia_report_brief_lists_all_three_questions(self):
-        text = engine.render_report_brief(engine.derive("150991647"))
-        self.assertEqual(text.count("ASK ("), 3)
-        self.assertIn("UNSUPPORTED spell_output", text)
-
-
-class TestWorkedExampleIsAdvertised(unittest.TestCase):
-    """A live public character beats a `<id>` placeholder: an agent can run it
-    immediately, and this one exercises all three trust lanes at once."""
-
-    REF = "150991647"
-
-    def _root(self):
-        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    def test_every_agent_facing_surface_names_it(self):
-        for rel in ("README.md", "AGENTS.md", "llms.txt", "tool.json"):
-            with open(os.path.join(self._root(), rel)) as f:
-                self.assertIn(self.REF, f.read(), f"{rel} omits the worked example")
-
-    @needs_net
-    def test_the_advertised_example_still_derives(self):
-        """If the sheet ever goes private, this fails loudly rather than
-        leaving a dead example in the README."""
-        code, out = run(["derive", self.REF, "--brief"])
-        self.assertIn(code, (0, 1, 2), out)
-        self.assertIn("Shalia", out)
-
-    @needs_net
-    def test_the_example_still_shows_all_three_lanes(self):
-        t = engine.derive(self.REF)["trust"]
-        self.assertTrue(t["trusted"], "example lost its trusted lane")
-        self.assertTrue(t["ask_player"], "example lost its ask_player lane")
-        self.assertTrue(
-            t["unsupported"],
-            "example lost its unsupported lane — most likely its non-SRD feat "
-            "was removed from the sheet. That feat is load-bearing for this "
-            "example: see test_the_negative_case_is_still_present.")
-
-    @needs_net
-    def test_the_negative_case_is_still_present(self):
-        """The example carries one non-SRD feat ON PURPOSE.
-
-        Documented as expected across the README, AGENTS.md, llms.txt and
-        tool.json. A tidy all-SRD character would only ever demonstrate the
-        happy path, and real sheets are full of homebrew, legacy options and
-        manual overrides. This asserts the cause rather than only the effect,
-        so if someone 'cleans up' the sheet the failure names what was lost.
-        """
-        feats = engine.derive(self.REF)["feats_identified"]
-        outside = [f["name"] for f in feats
-                   if "outside SRD" in (f.get("category") or "")]
-        self.assertTrue(
-            outside,
-            "the worked example no longer has any non-SRD content, so it can "
-            "no longer demonstrate the unsupported lane. Either restore it or "
-            "update the docs that call it a deliberate negative case.")
-
-    def test_the_negative_case_is_documented_as_expected(self):
-        """If it is not documented, the next reader files it as a bug."""
-        for rel in ("README.md", "AGENTS.md", "llms.txt", "tool.json"):
-            with open(os.path.join(self._root(), rel)) as f:
-                text = f.read().lower()
-            self.assertTrue(
-                "negative case" in text or "not** in the srd" in text
-                or "outside the srd" in text,
-                f"{rel} does not explain that the example's non-SRD content is "
-                "deliberate")
+if __name__ == "__main__":
+    unittest.main()

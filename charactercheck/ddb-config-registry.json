@@ -1,0 +1,71 @@
+{
+  "schema_version": "charactercheck.ddb-config-registry/1",
+  "metadata": {
+    "source_url": "https://www.dndbeyond.com/api/config/json",
+    "observed_at": "2026-08-01T06:53:04Z",
+    "source_last_modified": "Sat, 01 Aug 2026 06:53:04 GMT",
+    "source_access": "Publicly readable when observed; treated as an unsupported internal API, with no runtime dependency. Shipped tables are minimized to current evaluator dependencies.",
+    "source_body_sha256": "ff62ff7edb9f33bdd1b6d25e71763b8205cff5db12d7df20f942b7a01fb90aea",
+    "semantic_fingerprint_sha256": "56c8300477353d9a57344e3c89185d3d6a6c4099647fd4320569350b509fbd6f",
+    "cross_check": {
+      "repository_url": "https://github.com/MrPrimate/ddb-importer",
+      "commit": "0227f9cb5bee6ec74ac6ea2956b22da4cd7b4460",
+      "file_path": "data/fallback-config.json",
+      "file_sha256": "a6a174c1002793aa72934df333ae63e7f83d804e37fa01253d54c50959606333",
+      "license": "MIT",
+      "license_url": "https://github.com/MrPrimate/ddb-importer/blob/0227f9cb5bee6ec74ac6ea2956b22da4cd7b4460/LICENSE.md",
+      "allowlisted_subset_match": true
+    },
+    "attribution": {
+      "statement": "Purpose-limited ID/name facts used by current evaluator branches were independently observed from D&D Beyond and cross-checked against the cited MIT fallback registry; no runtime fetch, full config dump, or copied rules prose is included.",
+      "upstream": "D&D Beyond",
+      "cross_check_project": "MrPrimate/ddb-importer",
+      "copyright": [
+        "Copyright (c) 2019 Sebastian Will",
+        "Copyright (c) 2020 Jack Holloway"
+      ]
+    }
+  },
+  "tables": {
+    "armor_types": [
+      {"id": 1, "name": "Light Armor"},
+      {"id": 2, "name": "Medium Armor"},
+      {"id": 3, "name": "Heavy Armor"},
+      {"id": 4, "name": "Shield"}
+    ],
+    "range_types": [
+      {"id": 1, "name": "Melee"},
+      {"id": 2, "name": "Ranged"}
+    ],
+    "damage_types": [
+      {"id": 1, "name": "Bludgeoning"},
+      {"id": 2, "name": "Piercing"},
+      {"id": 3, "name": "Slashing"},
+      {"id": 4, "name": "Necrotic"},
+      {"id": 5, "name": "Acid"},
+      {"id": 6, "name": "Cold"},
+      {"id": 7, "name": "Fire"},
+      {"id": 8, "name": "Lightning"},
+      {"id": 9, "name": "Thunder"},
+      {"id": 10, "name": "Poison"},
+      {"id": 11, "name": "Psychic"},
+      {"id": 12, "name": "Radiant"},
+      {"id": 13, "name": "Force"}
+    ],
+    "dice_values": [4, 6, 8, 10, 12],
+    "weapon_properties": [
+      {"id": 2, "name": "Finesse"},
+      {"id": 4, "name": "Light"},
+      {"id": 5, "name": "Loading"},
+      {"id": 11, "name": "Two-Handed"},
+      {"id": 18, "name": "Cleave"},
+      {"id": 19, "name": "Graze"},
+      {"id": 20, "name": "Nick"},
+      {"id": 21, "name": "Push"},
+      {"id": 22, "name": "Sap"},
+      {"id": 23, "name": "Slow"},
+      {"id": 24, "name": "Topple"},
+      {"id": 25, "name": "Vex"}
+    ]
+  }
+}

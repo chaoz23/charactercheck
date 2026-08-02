@@ -25,6 +25,19 @@ security surface at zero and keeps the support surface small.
 #: Failure exits with its own code. 0/1/2 keep their published meanings.
 EXIT_FETCH = 3
 
+# Stable error names exposed by the CLI/tool boundary. JSON-RPC protocol
+# errors use their standard numeric codes and are intentionally separate.
+PUBLIC_ERROR_KINDS = (
+    "bad_flag", "not_public", "not_found", "bad_ref", "network",
+    "rate_limited", "bad_json", "upstream", "missing_file",
+    "local_files_disabled", "file_read", "file_policy",
+    "invalid_character", "input_too_large", "input_too_deep",
+    "input_limit", "cyclic_reference", "persona_requires_local",
+    "snapshot_schema", "snapshot_integrity", "snapshot_required",
+    "snapshot_source_mismatch", "source_coverage", "output_too_large",
+    "internal_error",
+)
+
 
 class CharacterCheckError(Exception):
     """A failure the caller can do something about.
@@ -35,22 +48,30 @@ class CharacterCheckError(Exception):
 
     exit_code = EXIT_FETCH
 
-    def __init__(self, kind, message, action, ref=None, detail=None):
+    def __init__(self, kind, message, action, ref=None, detail=None,
+                 retryable=False):
         super().__init__(message)
         self.kind = kind
         self.message = message
         self.action = action
         self.ref = ref
         self.detail = detail
+        self.retryable = bool(retryable)
 
     def as_dict(self):
         d = {"ok": False, "error": self.kind, "message": self.message,
-             "action": self.action, "exit_code": self.exit_code}
-        if self.ref:
-            d["ref"] = self.ref
-        if self.detail:
-            d["detail"] = self.detail
+             "action": self.action, "retryable": self.retryable,
+             "exit_code": self.exit_code}
+        # Refs and raw exception detail may contain character ids, local paths,
+        # query strings, proxy details, or source text. They are library-side
+        # diagnostics, never part of the public process/tool boundary.
+        if self.kind == "internal_error" and self.detail:
+            d["correlation_id"] = self.detail
         return d
+
+
+def _input_error(kind, message, action):
+    return CharacterCheckError(kind, message, action)
 
 
 def not_public(ref):
@@ -60,8 +81,9 @@ def not_public(ref):
         "or not shared.",
         "Open the character on D&D Beyond, set Character Privacy to Public, "
         "and retry. If you cannot change it, save the character-service JSON "
-        "and pass that file path instead — charactercheck reads a saved file "
-        "with no permissions at all, and never asks for credentials.",
+        "and use it through the trusted local CLI/library instead — the MCP "
+        "server never reads host-local files, and CharacterCheck never asks "
+        "for credentials.",
         ref=ref)
 
 
@@ -70,7 +92,7 @@ def not_found(ref):
         "not_found",
         "D&D Beyond returned 404 for this character id.",
         "Check the id. A D&D Beyond character URL looks like "
-        "https://www.dndbeyond.com/characters/12345678 — the number at the end "
+        "https://www.dndbeyond.com/characters/<character-id> — the final number "
         "is the id. A deleted character also 404s.",
         ref=ref)
 
@@ -78,10 +100,134 @@ def not_found(ref):
 def bad_ref(ref):
     return CharacterCheckError(
         "bad_ref",
-        f"No character id could be found in {ref!r}.",
-        "Pass a D&D Beyond character URL, a bare numeric id, or the path to a "
+        "The reference is not one of the supported input shapes.",
+        "Pass an exact D&D Beyond character URL, a bare numeric id, or the path to a "
         "saved character-service JSON file.",
         ref=ref)
+
+
+def missing_file():
+    return _input_error(
+        "missing_file",
+        "The local JSON path does not exist or is not a regular file.",
+        "Check the path, or pass an exact numeric character id or an allowlisted "
+        "https://www.dndbeyond.com/characters/<id> URL.")
+
+
+def local_files_disabled():
+    return _input_error(
+        "local_files_disabled",
+        "This caller does not permit local-file references.",
+        "Use an exact public numeric id or D&D Beyond character URL. For a "
+        "saved JSON export, use the trusted local CLI/library instead.")
+
+
+def persona_requires_local():
+    return _input_error(
+        "persona_requires_local",
+        "Persona export is available only for an explicitly supplied local file.",
+        "Save an authorized character JSON locally, then use the trusted local "
+        "CLI/library with the explicit persona option.")
+
+
+def file_read(detail):
+    return CharacterCheckError(
+        "file_read", "The local JSON file could not be read.",
+        "Check that it is a readable regular file and retry.", detail=detail)
+
+
+def file_policy(reason):
+    return CharacterCheckError(
+        "file_policy", "The local path is outside the supported file policy.",
+        "Pass a direct path to a regular JSON file; symbolic links and remote "
+        "file URIs are not accepted.", detail=reason)
+
+
+def invalid_character(detail):
+    return CharacterCheckError(
+        "invalid_character",
+        "The JSON is not a structurally valid character payload.",
+        "Export a D&D Beyond character-service v5 payload or a supported "
+        "CharacterSnapshotV1 and retry.", detail=detail)
+
+
+def input_too_large(limit):
+    return _input_error(
+        "input_too_large", f"The input exceeds the {limit}-byte safety limit.",
+        "Use an unmodified character-service payload below the documented limit.")
+
+
+def input_too_deep(limit):
+    return _input_error(
+        "input_too_deep", f"The JSON exceeds the maximum nesting depth of {limit}.",
+        "Use an unmodified character-service payload with ordinary nesting.")
+
+
+def input_limit(name, limit):
+    return _input_error(
+        "input_limit", f"The input exceeds the {name} safety limit ({limit}).",
+        "Reduce the payload to one ordinary character-service document and retry.")
+
+
+def cyclic_reference():
+    return _input_error(
+        "cyclic_reference", "The input contains a cyclic or shared container reference.",
+        "Repair the inventory links or pass an ordinary JSON tree, then retry.")
+
+
+def snapshot_schema():
+    return _input_error(
+        "snapshot_schema", "The snapshot schema or version is unsupported.",
+        "Create a new snapshot with this CharacterCheck version; snapshots do "
+        "not migrate silently.")
+
+
+def snapshot_integrity():
+    return _input_error(
+        "snapshot_integrity", "The snapshot content or metadata does not match its integrity hash.",
+        "Treat the snapshot as modified or corrupt and create a new one.")
+
+
+def snapshot_required():
+    return _input_error(
+        "snapshot_required", "Diff baselines must be CharacterSnapshotV1 JSON files.",
+        "Run `charactercheck snapshot <ref> > baseline.json`, then pass that file "
+        "to `--baseline`.")
+
+
+def snapshot_source_mismatch():
+    return _input_error(
+        "snapshot_source_mismatch",
+        "The baseline and candidate identify different character sources.",
+        "Create the baseline from the same character source; CharacterCheck "
+        "does not guess identity across characters.")
+
+
+def source_coverage():
+    return _input_error(
+        "source_coverage",
+        "The source contains unclassified fields that a plain character object "
+        "cannot represent without losing trust metadata.",
+        "Use `derive`, `snapshot`, or another canonical view that preserves "
+        "meta.source_coverage; do not compose `fetch` with `build` or "
+        "`derive_data` for this source.")
+
+
+def internal_error(correlation_id):
+    return CharacterCheckError(
+        "internal_error",
+        "CharacterCheck hit an unexpected internal error.",
+        "Retry once; if it repeats, report the correlation_id and tool version "
+        "without attaching private character data.", detail=correlation_id,
+        retryable=True)
+
+
+def output_too_large(limit):
+    return CharacterCheckError(
+        "output_too_large",
+        "The structured result exceeds this MCP server's response-size limit.",
+        "Request a narrower view or use the trusted local CLI/library for the "
+        "full artifact.", detail=str(limit))
 
 
 def rate_limited(ref):
@@ -90,7 +236,7 @@ def rate_limited(ref):
         "D&D Beyond returned 429 — too many requests.",
         "Wait a minute and retry. If you are deriving many characters, space "
         "the calls out; there is no bulk endpoint.",
-        ref=ref)
+        ref=ref, retryable=True)
 
 
 def network(ref, detail):
@@ -99,8 +245,9 @@ def network(ref, detail):
         "Could not reach D&D Beyond.",
         "Check network access. charactercheck needs outbound HTTPS to "
         "character-service.dndbeyond.com. If this host has no network, save "
-        "the character JSON elsewhere and pass the file path.",
-        ref=ref, detail=detail)
+        "the character JSON elsewhere and use it through the trusted local "
+        "CLI/library; the MCP server does not read host-local paths.",
+        ref=ref, detail=detail, retryable=True)
 
 
 def bad_json(ref, detail):
@@ -109,7 +256,8 @@ def bad_json(ref, detail):
         "The response was not the character JSON charactercheck expects.",
         "If you passed a file, confirm it is a character-service v5 payload "
         "(it has a top-level 'data' object). If this came from D&D Beyond, "
-        "the API may have changed — please open an issue with the ref.",
+        "the API may have changed — report the tool version and redacted error "
+        "kind, not the character reference or source payload.",
         ref=ref, detail=detail)
 
 
@@ -119,7 +267,7 @@ def upstream(ref, status):
         f"D&D Beyond returned HTTP {status}.",
         "This is an error on D&D Beyond's side, not in your input. Retry "
         "shortly; if it persists, D&D Beyond may be down.",
-        ref=ref, detail=str(status))
+        ref=ref, detail=str(status), retryable=True)
 
 
 # ---------------------------------------------------------------------------
@@ -153,38 +301,41 @@ def doctor(ref=None):
         socket.getaddrinfo("character-service.dndbeyond.com", 443)
         add("dns", True, "character-service.dndbeyond.com resolves")
     except OSError as e:
-        add("dns", False, str(e),
+        add("dns", False, f"resolution failed ({type(e).__name__})",
             "This host cannot resolve D&D Beyond. Work offline instead: save "
             "the character-service JSON and pass the file path.")
 
     if any(c["check"] == "dns" and c["ok"] for c in checks):
         try:
             req = urllib.request.Request(
-                "https://character-service.dndbeyond.com/character/v5/character/1",
+                "https://character-service.dndbeyond.com/",
                 headers={"Accept": "application/json",
                          "User-Agent": "charactercheck-doctor"})
-            urllib.request.urlopen(req, timeout=20)
+            with urllib.request.urlopen(req, timeout=20):
+                pass
             add("network", True, "outbound HTTPS works")
-        except urllib.error.HTTPError:
+        except urllib.error.HTTPError as e:
             # A 403/404 here is a *successful* round trip — the service
             # answered. That is exactly what we are testing for.
+            if getattr(e, "fp", None) is not None:
+                e.close()
             add("network", True, "outbound HTTPS works (service answered)")
         except Exception as e:  # noqa: BLE001 - diagnosing, report anything
-            add("network", False, str(e),
+            add("network", False, f"outbound HTTPS failed ({type(e).__name__})",
                 "Outbound HTTPS to character-service.dndbeyond.com failed. "
                 "Check egress/proxy, or pass a saved JSON file path instead.")
 
     if ref:
         try:
             from . import engine
-            d = engine.fetch(ref)
-            name = (d or {}).get("name") or "(unnamed)"
-            add("character", True, f"fetched {name!r}")
+            engine.fetch_loaded(ref)
+            add("character", True, "authorized source fetched and validated")
         except CharacterCheckError as e:
             add("character", False, f"{e.kind}: {e.message}", e.action)
         except Exception as e:  # noqa: BLE001
-            add("character", False, repr(e),
-                "Unexpected failure — please open an issue with this output.")
+            add("character", False, f"unexpected {type(e).__name__}",
+                "Report the tool version and check name without attaching the "
+                "character reference, local path, or source payload.")
 
     ok = all(c["ok"] for c in checks)
     return {"ok": ok, "checks": checks,
@@ -225,8 +376,9 @@ def selftest():
     """Derive the bundled sample character and check known values.
 
     Returns ``(ok, lines)``. Deliberately offline: the sample ships in the
-    package, so a pass proves the derivation engine works and isolates any
-    remaining problem to network or character access.
+    package, so a pass checks the selected derivations exercised by that
+    fixture and isolates many install failures from network or character
+    access. It is not a completeness proof.
     """
     import os
 
@@ -245,9 +397,10 @@ def selftest():
     lines, ok = [], True
     try:
         r = engine.derive(path)
-    except Exception as e:  # noqa: BLE001 - a selftest reports anything
-        return False, [f"[FAIL] derivation raised: {e!r}",
-                       "       -> please open an issue with this line"]
+    except Exception as e:  # noqa: BLE001 - redact at the selftest boundary
+        return False, [f"[FAIL] derivation raised an internal {type(e).__name__}",
+                       "       -> report the tool version and failing check; "
+                       "do not attach character data or local paths"]
 
     got_name = (r.get("identity") or {}).get("name")
     got_level = (r.get("identity") or {}).get("level")

@@ -1,19 +1,19 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools==80.10.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "charactercheck"
 version = "0.6.2"
-description = "Deterministic D&D Beyond character-sheet derivation with provenance — every stat computed and traceable, every unhandled case named, never guessed."
+description = "Experimental read-only derivation of selected D&D Beyond character fields with provenance and findings."
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"]
 requires-python = ">=3.9"
 authors = [{name = "chaoz23"}]
 keywords = ["dnd", "dndbeyond", "character-sheet", "ttrpg", "agents", "mcp", "deterministic"]
 classifiers = [
   "Programming Language :: Python :: 3",
-  "License :: OSI Approved :: MIT License",
   "Topic :: Games/Entertainment :: Role-Playing",
 ]
 
@@ -28,4 +28,4 @@ charactercheck-mcp = "charactercheck.mcp:main"
 packages = ["charactercheck"]
 
 [tool.setuptools.package-data]
-charactercheck = ["sample-character.json"]
+charactercheck = ["sample-character.json", "ddb-config-registry.json"]

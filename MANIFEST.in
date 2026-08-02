@@ -1,0 +1,19 @@
+include AGENTS.md
+include CHANGELOG.md
+include ECOSYSTEM_CONFORMANCE.md
+include LICENSE
+include MIGRATING.md
+include NOTICE
+include PRIVACY.md
+include README.md
+include SECURITY.md
+include SOURCE_FIELD_ROUTING.md
+include SUPPORT.md
+include THIRD_PARTY_NOTICES.md
+include llms.txt
+include server.json
+include tool.json
+recursive-include charactercheck *.json *.py
+recursive-include examples *.json
+recursive-include tests *.json *.py
+global-exclude __pycache__ *.py[cod]

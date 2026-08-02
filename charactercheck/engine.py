@@ -1,22 +1,14 @@
-"""charactercheck engine — deterministic derivation of a D&D Beyond character.
+"""Selected, read-only character derivation with explicit uncertainty.
 
-One engine, several views. Input: a public D&D Beyond character (URL, id, or a
-saved character-service v5 JSON file). Output: derived stats where every value
-is deterministic arithmetic over the payload, plus two honesty lanes:
-
-- ``unhandled``: data patterns this engine recognizes as present but does not
-  model — reported by name, never silently defaulted.
-- ``lint``: things on the sheet that look wrong or ambiguous (nothing equipped,
-  multiple worn-armor candidates, stashed containers).
-
-No network beyond the single public character fetch. No auth. No model calls.
+The engine compiles only its documented handlers. Unsupported, invalid, and
+unknown-scope source records are excluded from arithmetic and routed through
+findings; lint records known ambiguities. This is character context, not a
+complete rules validator or authoritative encounter/session state.
 """
 
-import json
-import os
+import copy
+import hashlib
 import re
-import urllib.error
-import urllib.request
 
 ABIL = {1: "str", 2: "dex", 3: "con", 4: "int", 5: "wis", 6: "cha"}
 ABILN = {1: "strength", 2: "dexterity", 3: "constitution",
@@ -35,9 +27,6 @@ SKILL_IDS = {3: "acrobatics", 11: "animal-handling", 6: "arcana", 2: "athletics"
              8: "investigation", 13: "medicine", 9: "nature", 14: "perception",
              18: "performance", 19: "persuasion", 10: "religion",
              4: "sleight-of-hand", 5: "stealth", 15: "survival"}
-MASTERIES = {"Vex", "Nick", "Sap", "Topple", "Slow", "Push", "Graze",
-             "Cleave", "Flex"}
-
 # SRD 5.2.1 feat categories (closed set, extracted from the source text).
 FEAT_CATEGORIES = {
     "Alert": "Origin", "Magic Initiate": "Origin", "Savage Attacker": "Origin",
@@ -61,18 +50,28 @@ BLAST_MAP = {
     "bonus:magic": (["attacks"], "magic attack bonus"),
     "bonus:saving-throws": (["saves"], "all-saves bonus"),
     "bonus:proficiency-bonus": (["proficiency_bonus", "saves", "skills", "attacks", "spell_save_dc"], "PB modifier"),
+    "bonus:ability-score-maximum": (["abilities"], "ability-cap increase with unresolved target semantics"),
+    "advantage:saving-throws": (["saves"], "saving-throw advantage"),
+    "bonus:spell-group-healing": (["spell_output"], "spell-group healing bonus"),
+    "immunity:magical-sleep": (["defenses"], "sleep immunity"),
+    "proficiency:calligraphers-supplies": (["skills"], "tool proficiency"),
+    "set-base:darkvision": (["senses"], "darkvision distance"),
+    "set:innate-speed-walking": (["speeds"], "walking speed"),
+    "set:subclass": ([
+        "abilities", "ac", "initiative", "hp", "saves", "skills",
+        "attacks", "weapons", "speeds", "senses", "defenses",
+        "languages", "proficiency_bonus", "spellcasting", "spell_save_dc",
+        "spell_attack_bonus", "spell_output", "spell_slots",
+        "prepared_spells", "resources",
+    ], "subclass selection can affect the static class build"),
 }
 MAXIMAL = ["unknown — treat all derived values as unverified"]
 
 #: Prefix families for modifier subTypes we do not model individually but whose
 #: *target* is legible from the name. Matched longest-prefix-first.
 #:
-#: Added on UXR from an agent using this at a live table: a single unhandled
-#: `bonus:spell-group-healing` was collapsing the whole report to "treat all
-#: derived values as unverified", and the agent's objection was exactly right —
-#: *"too broad for play. I'd rather see 'affects healing spell output only', so
-#: I can still trust AC, saves, skills, HP."* A caveat that covers everything
-#: is worth the same as no caveat at all, because nobody can act on it.
+#: Known prefixes may narrow a finding only when the target family is legible.
+#: Truly unknown patterns remain global and fail closed.
 BLAST_PREFIXES = [
     ("bonus:spell-group-", (["spell_output"], "bonus to a spell group's output")),
     ("bonus:spell-", (["spellcasting"], "spellcasting bonus")),
@@ -84,11 +83,16 @@ BLAST_PREFIXES = [
     ("bonus:save", (["saves"], "saving-throw bonus")),
 ]
 
-#: Every family the engine derives. Used to compute what an unhandled item
-#: provably did NOT touch.
-ALL_FAMILIES = ["ac", "initiative", "hp", "saves", "skills", "weapons",
-                "spellcasting", "spell_save_dc", "spell_attack_bonus",
-                "spell_output", "speeds", "proficiency_bonus", "attacks"]
+#: The single catalog for derived/reportable families. Compatibility aliases
+#: below point to this object so coverage and routing cannot drift.
+FAMILY_CATALOG = [
+    "abilities", "ac", "initiative", "hp", "saves", "skills", "attacks",
+    "weapons", "speeds", "senses", "defenses", "languages",
+    "proficiency_bonus", "spellcasting", "spell_save_dc",
+    "spell_attack_bonus", "spell_output", "spell_slots", "prepared_spells",
+    "inventory", "resources",
+]
+ALL_FAMILIES = FAMILY_CATALOG
 
 
 def blast(pat):
@@ -97,11 +101,9 @@ def blast(pat):
     Returns ``(affects, note)``. Exact map first, then prefix family, then a
     last resort.
 
-    The last resort is deliberately *not* "distrust everything". An unhandled
-    modifier is **never applied** — that is what unhandled means — so every
-    derived number is exactly what it would be if the modifier did not exist.
-    The open question is only whether it *should* have been applied. Saying
-    "treat all values as unverified" overstates that into uselessness.
+    An unhandled modifier is never applied. When its target is not legible,
+    the returned ``unknown`` scope causes all derived families to fail closed;
+    the engine cannot prove which values the omitted effect should change.
     """
     if pat in BLAST_MAP:
         return BLAST_MAP[pat]
@@ -111,74 +113,64 @@ def blast(pat):
     return (["unknown"], "target not legible from the pattern name; it was "
                          "not applied to any derived value")
 
-# modifier type:subType patterns the engine understands (everything else is
-# reported in `unhandled.modifiers` — the completeness contract)
-_SKILL_SET = set(SKILLS)
+from . import ddb_registry, registry, source  # noqa: E402  (after stdlib imports)
 
 
-def _recognized(mtype, msub):
-    if mtype == "bonus":
-        return (msub.endswith("-score") or msub == "initiative"
-                or msub in _SKILL_SET or msub == "ability-score-maximum"
-                or msub in ("hit-points", "hit-points-per-level",
-                            "armor-class", "armored-armor-class",
-                            "dual-wield-armor-class"))
-    return mtype in ("proficiency", "replace-weapon-ability", "language",
-                     "immunity", "resistance", "set-base", "set",
-                     "enable-feature", "expertise", "half-proficiency",
-                     "advantage", "disadvantage", "sense", "ignore",
-                     "protection", "vulnerability", "damage", "carrying-capacity")
-
-
-from . import errors  # noqa: E402  (after stdlib imports)
+# Every shipped property ID has an explicit current consumer. This purpose
+# map is intentionally exact: adding catalog vocabulary to the adapter
+# registry without an evaluator branch fails at import instead of silently
+# broadening the distributed data surface.
+WEAPON_PROPERTY_CONSUMERS = {
+    2: "attack_ability.finesse",
+    4: "weapon_state.light",
+    5: "weapon_state.loading",
+    11: "weapon_state.two_handed",
+    18: "mastery_identity.cleave",
+    19: "mastery_identity.graze",
+    20: "mastery_identity.nick",
+    21: "mastery_identity.push",
+    22: "mastery_identity.sap",
+    23: "mastery_identity.slow",
+    24: "mastery_identity.topple",
+    25: "mastery_identity.vex",
+}
+if set(ddb_registry.WEAPON_PROPERTIES) != set(WEAPON_PROPERTY_CONSUMERS):
+    raise RuntimeError(
+        "DDB weapon-property allowlist and evaluator consumers differ")
+MASTERIES = frozenset(
+    ddb_registry.WEAPON_PROPERTIES[identifier]
+    for identifier in range(18, 26)
+)
 
 
 def fetch(ref):
-    """Load a character: local JSON file path, bare id, or dndbeyond URL.
+    """Load a plain mechanical character only when no coverage signal is lost.
 
-    Every failure here raises a typed :class:`~charactercheck.errors.
-    CharacterCheckError` carrying a one-sentence action. Nothing raw escapes:
-    a caller that gets a urllib traceback cannot act on it, and an agent that
-    gets one will either invent a workaround or open an issue. See
-    `charactercheck/errors.py` for the measurement that motivated this.
+    Canonical agent views should use :func:`derive`. A plain ``dict`` has no
+    place to carry omission metadata, so this compatibility API fails closed
+    instead of enabling ``derive_data(fetch(ref))`` to upgrade incomplete input.
     """
-    if os.path.exists(ref):
-        try:
-            d = json.load(open(ref))
-        except (json.JSONDecodeError, UnicodeDecodeError) as e:
-            raise errors.bad_json(ref, str(e))
-        if not isinstance(d, dict):
-            raise errors.bad_json(ref, "top level is not an object")
-        return d.get("data", d)
-    m = re.search(r"(\d+)", str(ref))
-    if not m:
-        raise errors.bad_ref(ref)
-    url = ("https://character-service.dndbeyond.com/character/v5/character/"
-           + m.group(1))
-    req = urllib.request.Request(url, headers={
-        "Accept": "application/json",
-        "User-Agent": "charactercheck (+https://github.com/chaoz23/charactercheck)"})
-    try:
-        raw = urllib.request.urlopen(req, timeout=30)
-    except urllib.error.HTTPError as e:
-        if e.code == 403:
-            raise errors.not_public(ref)
-        if e.code == 404:
-            raise errors.not_found(ref)
-        if e.code == 429:
-            raise errors.rate_limited(ref)
-        raise errors.upstream(ref, e.code)
-    except urllib.error.URLError as e:
-        raise errors.network(ref, str(getattr(e, "reason", e)))
-    except OSError as e:
-        raise errors.network(ref, str(e))
-    try:
-        payload = json.load(raw)
-    except (json.JSONDecodeError, UnicodeDecodeError) as e:
-        raise errors.bad_json(ref, str(e))
-    if not isinstance(payload, dict) or "data" not in payload:
-        raise errors.bad_json(ref, "response has no 'data' object")
-    return payload["data"]
+    loaded = source.load(ref)
+    character, detected = source.privacy_filter_with_coverage(loaded.character)
+    coverage = source.normalize_source_coverage(
+        detected, loaded.source_coverage)
+    if any(coverage.values()):
+        from . import errors
+        raise errors.source_coverage()
+    return character
+
+
+def fetch_loaded(ref):
+    """Load once while retaining source metadata for coherent projections."""
+    return source.load(ref)
+
+
+def snapshot(ref, *, include_persona=False):
+    """Export a privacy-filtered, versioned CharacterSnapshotV1."""
+    if include_persona and source.parse_ref(ref)[0] != "path":
+        from . import errors
+        raise errors.persona_requires_local()
+    return source.make_snapshot(fetch_loaded(ref), include_persona=include_persona)
 
 
 def _mod(score):
@@ -230,62 +222,61 @@ def _slot_rows(d, key):
 
 
 
-#: Families a caller can route on. Kept in one place so the trust map, the
-#: lint entries and `verified_clean` cannot drift apart.
-TRUST_FAMILIES = ["ac", "hp", "initiative", "saves", "skills", "attacks",
-                  "weapons", "speeds", "proficiency_bonus", "spellcasting",
-                  "spell_save_dc", "spell_attack_bonus", "spell_output",
-                  "spell_slots", "prepared_spells", "inventory"]
+TRUST_FAMILIES = FAMILY_CATALOG
 
 
-def _lint(W, code, message, ask=None, affects=()):
+def _lint(W, code, message, ask=None, affects=(), state="confirm"):
     """Record a lint finding as something a caller can act on.
-
-    From live agent UXR: *"Every lint/unhandled should include a short human
-    question… This is the difference between 'tool reports caveat' and 'agent
-    resolves caveat at table.'"* Exactly right, and it is the same move that
-    made the exit-3 errors useful — a finding without a next action is
-    archaeology.
 
     `affects` names the families this finding puts in doubt, which is what
     routes them out of `trusted` and into `ask_player` in the trust map.
     """
     W["lint"].append({"code": code, "message": message,
-                      "ask": ask, "affects": sorted(affects)})
+                      "ask": ask, "affects": sorted(affects),
+                      "state": state})
 
 
 def trust_map(lint, unhandled):
-    """Route every family into trusted / ask_player / unsupported.
+    """Route every family through a fail-closed state precedence.
 
-    From live agent UXR: *"agents need routing, not archaeology."* The three
-    lists already existed — `verified_clean`, `lint`, `unhandled` — but
-    scattered in shapes tuned for a human reading a report. An agent under
-    turn pressure needs one place that answers "may I state this number?"
-
-    The three lanes are deliberately exclusive and ordered by severity:
-
-      * ``unsupported`` — the engine saw something it does not model that
-        targets this family. Do not state these; say what is missing.
-      * ``ask_player``  — derived, but a lint puts it in doubt. One human
-        question resolves it, and that question is in ``asks``.
-      * ``trusted``     — nothing outstanding touches it. Safe to state.
+    Family lanes are exclusive and follow ``invalid > unknown > unsupported >
+    ask_player > trusted``. Here, ``trusted`` means only that this version
+    detected no finding in its supported coverage; it is not rules, role,
+    action, encounter, or session authority.
     """
+    invalid = {}
+    unknown_patterns = []
     unsupported = {}
     for item in (unhandled or {}).get("items", []):
-        for fam in item.get("possibly_affects", []):
-            if fam in TRUST_FAMILIES:
-                unsupported.setdefault(fam, []).append(item["pattern"])
+        affects = item.get("possibly_affects", [])
+        if "unknown" in affects or any(fam not in TRUST_FAMILIES for fam in affects):
+            unknown_patterns.append(item["pattern"])
+            continue
+        target = invalid if item.get("state") == "invalid" else unsupported
+        for fam in affects:
+            target.setdefault(fam, []).append(item["pattern"])
+
+    unknown = ({family: sorted(set(unknown_patterns))
+                for family in TRUST_FAMILIES} if unknown_patterns else {})
+
+    for finding in lint or []:
+        if finding.get("state") != "invalid":
+            continue
+        for family in finding.get("affects", []):
+            invalid.setdefault(family, []).append(
+                finding.get("code") or "invalid_source_state")
 
     ask = {}
     for f in lint or []:
         for fam in f.get("affects", []):
-            if fam in unsupported:
+            if fam in invalid or fam in unknown or fam in unsupported:
                 continue
             ask.setdefault(fam, []).append(
                 {"code": f.get("code"), "ask": f.get("ask")})
 
     trusted = [f for f in TRUST_FAMILIES
-               if f not in unsupported and f not in ask]
+               if f not in invalid and f not in unknown
+               and f not in unsupported and f not in ask]
 
     asks = []
     seen = set()
@@ -299,52 +290,45 @@ def trust_map(lint, unhandled):
     return {"trusted": trusted,
             "ask_player": {k: v for k, v in sorted(ask.items())},
             "unsupported": {k: sorted(set(v)) for k, v in sorted(unsupported.items())},
+            "unknown": unknown,
+            "invalid": {k: sorted(set(v)) for k, v in sorted(invalid.items())},
             "asks": asks,
-            "note": ("Unsupported content was NOT applied to any derived value — "
-                     "trust the computed fields, but do not improvise around the "
-                     "named unsupported feature.")}
+            "note": ("Unsupported, unknown, and invalid content was not applied. "
+                     "A trusted lane means no detected finding within supported "
+                     "coverage; it is not global rules or action authority.")}
 
 
-def build(d):
-    """Derive everything once. Returns the raw derivation workspace (dict).
+def build(d, *, _privacy_filtered=False):
+    """Build the documented derivation workspace once.
 
     Prefer :func:`derive` for the shaped, provenance-carrying result.
     """
+    source.validate_character(d)
+    if not _privacy_filtered:
+        d, coverage = source.privacy_filter_with_coverage(d)
+        if any(coverage.values()):
+            from . import errors
+            raise errors.source_coverage()
     W = {"lint": [], "unhandled_modifiers": [], "notes": []}
     cid = d["id"]
 
-    # ---- modifiers: character buckets EXCEPT item, plus activation-gated
-    # per-item grantedModifiers (character.modifiers.item is NOT equip-filtered)
-    mods = [m for src, ml in (d.get("modifiers") or {}).items()
-            if src != "item" for m in (ml or [])]
-    for it in d.get("inventory", []):
-        de = it.get("definition") or {}
-        active = ((de.get("canAttune") and it.get("isAttuned"))
-                  or (not de.get("canAttune") and it.get("equipped"))
-                  or (not de.get("canEquip") and not de.get("canAttune")
-                      and not de.get("isConsumable")))
-        if active:
-            mods += de.get("grantedModifiers") or []
+    # ---- modifiers: one handler-backed ledger. Arithmetic below consumes
+    # only `classified.applied`; raw modifiers are never consulted again.
+    classified = registry.classify_modifiers(d)
+    mods = classified["applied"]
     W["mods"] = mods
-    unrec = sorted({f"{m.get('type')}:{m.get('subType')}" for m in mods
-                    if not _recognized(m.get("type") or "", m.get("subType") or "")})
-    W["unhandled_modifiers"] = unrec
-    # verbatim payload text per unhandled pattern (the intake interview reads
-    # the source's own words, never a paraphrase)
-    W["unhandled_text"] = {}
-    for m in mods:
-        pat = f"{m.get('type')}:{m.get('subType')}"
-        if pat in unrec and pat not in W["unhandled_text"]:
-            txt = ": ".join(b for b in (m.get("friendlyTypeName"),
-                                        m.get("friendlySubtypeName")) if b)
-            if m.get("restriction"):
-                txt += f" [restriction: {m['restriction']}]"
-            if txt:
-                W["unhandled_text"][pat] = txt[:280]
+    W["modifier_ledger"] = classified["ledger"]
+    W["unhandled_details"] = [record for record in classified["ledger"]
+                              if record["state"] in ("unsupported", "invalid")]
+    W["unhandled_modifiers"] = sorted({record["pattern"]
+                                       for record in W["unhandled_details"]})
 
     # ---- characterValues (typeId semantics: see docs/ddb-schema-notes.md)
-    cv = d.get("characterValues") or []
-    cname = {str(c["valueId"]): c["value"] for c in cv if c.get("typeId") == 8}
+    W["character_value_ledger"] = registry.classify_character_values(d)
+    cv = [record["normalized"] for record in W["character_value_ledger"]
+          if record["state"] == "applied"]
+    cname = {str(c["valueId"]): source.safe_mechanical_label(c["value"])
+             for c in cv if c.get("typeId") == 8}
     cnotes = {str(c["valueId"]): c["value"] for c in cv if c.get("typeId") == 9}
     hexflag = {str(c["valueId"]): str(c["value"]) == "True"
                for c in cv if c.get("typeId") in (28, 29)}
@@ -352,15 +336,24 @@ def build(d):
                         if c.get("typeId") == 1 and c.get("value") is not None), None)
     ac_adj = sum(int(c["value"]) for c in cv
                  if c.get("typeId") in (2, 3) and c.get("value") is not None)
-    known_cv = {1, 2, 3, 8, 9, 10, 18, 19, 22, 24, 25, 26, 27, 28, 29, 39, 40, 41}
-    unk_cv = sorted({c.get("typeId") for c in cv if c.get("typeId") not in known_cv})
-    if unk_cv:
-        W["unhandled_modifiers"] += [f"characterValues typeId {t}" for t in unk_cv]
+    unsupported_cv = [record for record in W["character_value_ledger"]
+                      if record["state"] in ("unsupported", "invalid")]
+    W["unhandled_details"].extend(unsupported_cv)
+    W["item_semantic_ledger"] = registry.classify_item_semantics(d)
+    W["unhandled_details"].extend(W["item_semantic_ledger"])
+    W["non_item_semantic_ledger"] = registry.classify_non_item_semantics(d)
+    W["unhandled_details"].extend(W["non_item_semantic_ledger"])
+    W["unhandled_modifiers"] = sorted(
+        set(W["unhandled_modifiers"])
+        | {record["pattern"] for record in unsupported_cv}
+        | {record["pattern"] for record in W["item_semantic_ledger"]}
+        | {record["pattern"] for record
+           in W["non_item_semantic_ledger"]})
     W.update(cname=cname, cnotes=cnotes, hexflag=hexflag,
              ac_override=ac_override, ac_adj=ac_adj)
 
     # ---- container graph: carried = chain to character w/o a stashed container
-    byid = {it["id"]: it for it in d.get("inventory", [])}
+    byid = {str(it["id"]): it for it in d.get("inventory", [])}
 
     def _stashed(iid):
         nm = (cname.get(str(iid)) or "").lower()
@@ -372,9 +365,9 @@ def build(d):
             if _stashed(cur["id"]):
                 return False
             parent = cur.get("containerEntityId")
-            if parent == cid or parent not in byid:
+            if parent is None or str(parent) == str(cid):
                 return True
-            cur = byid[parent]
+            cur = byid[str(parent)]
 
     W["carried"] = carried
     W["stash_notes"] = [
@@ -384,9 +377,11 @@ def build(d):
 
     # ---- ability scores: base + racial/feat bonuses, capped at 20 (+max
     # raises), set-if-not-higher, characterValues 39/40 bonus + 41 override
-    base = {s["id"]: s["value"] or 10 for s in d["stats"]}
-    over = {s["id"]: s["value"] for s in d.get("overrideStats", []) if s.get("value")}
-    bon = {s["id"]: s["value"] or 0 for s in d.get("bonusStats", [])}
+    base = {s["id"]: s["value"] for s in d["stats"]}
+    over = {s["id"]: s.get("value") for s in d.get("overrideStats", [])
+            if s.get("value") is not None}
+    bon = {s["id"]: (s.get("value") if s.get("value") is not None else 0)
+           for s in d.get("bonusStats", [])}
     for m in mods:
         st = m.get("subType") or ""
         if m.get("type") == "bonus" and st.endswith("-score"):
@@ -403,9 +398,6 @@ def build(d):
     setv = {i: 0 for i in range(1, 7)}
     for m in mods:
         st = m.get("subType") or ""
-        if m.get("type") == "bonus" and st == "ability-score-maximum":
-            for i in range(1, 7):
-                cap[i] += m.get("value") or 0
         if m.get("type") == "set" and m.get("isGranted", True):
             for i, n in ABILN.items():
                 if st == f"{n}-score":
@@ -414,9 +406,19 @@ def build(d):
     for i in range(1, 7):
         v = min(base.get(i, 10) + bon.get(i, 0) + cv_bon.get(i, 0), cap[i])
         v = max(v, setv[i])
-        A[i] = cv_over.get(i) or over.get(i) or v
+        if i in cv_over:
+            A[i] = cv_over[i]
+        elif i in over:
+            A[i] = over[i]
+        else:
+            A[i] = v
     am = {ABIL[i]: _mod(v) for i, v in A.items()}
     W.update(A=A, am=am)
+    if any(value < 1 or value > 30 for value in A.values()):
+        _lint(W, "ability_score_out_of_range",
+              "one or more ability scores are outside the supported 1..30 range",
+              ask="Which ability score values should the table use?",
+              affects=["abilities"], state="invalid")
 
     level = sum(c.get("level", 0) for c in d.get("classes", []))
     pb = 2 + max(0, (level - 1)) // 4
@@ -483,9 +485,16 @@ def build(d):
         de = it.get("definition") or {}
         if not carried(it):
             continue
-        if de.get("armorTypeId") == 4:
+        gaps = set(de.get("_semanticGaps") or [])
+        armor_class = de.get("armorClass")
+        if "armor_type" in gaps:
+            continue
+        if de.get("armorTypeId") == 4 and isinstance(armor_class, int) \
+                and not isinstance(armor_class, bool) and armor_class >= 1:
             shields.append(it)
-        elif de.get("armorClass"):
+        elif de.get("armorTypeId") in (1, 2, 3) \
+                and isinstance(armor_class, int) \
+                and not isinstance(armor_class, bool) and armor_class >= 1:
             body.append(it)
 
     def acof(it):
@@ -543,7 +552,14 @@ def build(d):
         ac += ac_adj
         prov.append(f"+{ac_adj} [manual adjustment]")
     sh_eq = [i for i in shields if i.get("equipped")]
-    shac = ((shields[0].get("definition") or {}).get("armorClass") or 2) if shields else 0
+    if len(sh_eq) > 1:
+        _lint(W, "multiple_shields_equipped",
+              "multiple shields are flagged equipped — using the first; confirm",
+              ask="Which shield, if any, is actually equipped?", affects=["ac"])
+    active_shield = sh_eq[0] if sh_eq else None
+    candidate_shield = active_shield or (shields[0] if len(shields) == 1 else None)
+    shac = (((candidate_shield.get("definition") or {}).get("armorClass") or 2)
+            if candidate_shield else None)
     if sh_eq:
         ac += shac
         prov.append(f"Shield +{shac}")
@@ -553,15 +569,25 @@ def build(d):
     W.update(ac=ac, ac_prov=" + ".join(prov),
              shield_carried=bool(shields), shield_equipped=bool(sh_eq), shac=shac,
              armor_worn=[cname.get(str(w["id"]), w["definition"].get("name")) for w in worn])
+    if ac < 0:
+        _lint(W, "armor_class_negative", "derived armor class is negative",
+              ask="What armor class should the table use?", affects=["ac"],
+              state="invalid")
 
     # ---- weapons (carried only), masteries from properties
     weapons, masteries, active_masteries = [], set(), set()
     for it in d.get("inventory", []):
         de = it.get("definition") or {}
         dmg = de.get("damage") or {}
-        if not dmg.get("diceString") or not carried(it):
+        gaps = set(de.get("_semanticGaps") or [])
+        if gaps & {"attack_type", "damage_dice", "damage_type",
+                   "additional_damage_semantics"}:
             continue
-        props = {p.get("name") for p in de.get("properties") or []}
+        dice = source.canonical_damage_dice(dmg)
+        if not dice or not carried(it):
+            continue
+        props = {p.get("name") for p in de.get("properties") or []
+                 if p.get("name") != "unclassified"}
         ms = props & MASTERIES
         masteries |= ms
         if it.get("equipped"):
@@ -579,7 +605,7 @@ def build(d):
             "designated": hexflag.get(str(it["id"]), False),
             "attack_bonus": use + pb,
             "attack_provenance": f"{why} {use:+d} + PB {pb}",
-            "damage": f"{dmg.get('diceString')}{use:+d}",
+            "damage": f"{dice}{use:+d}",
             "damage_type": de.get("damageType"),
             "properties": sorted(props), "mastery": sorted(ms),
             "offhand_label": bool(re.search(r"off.?hand", cname.get(str(it["id"]), ""), re.I)),
@@ -589,26 +615,33 @@ def build(d):
              active_masteries=sorted(active_masteries))
 
     # ---- HP (per-level bonuses scaled by granting class where linkable)
-    class_feature_levels = {}
-    for c in d.get("classes", []):
-        for f in (c.get("classFeatures") or []):
-            fid = (f.get("definition") or {}).get("id")
-            if fid:
-                class_feature_levels[fid] = c.get("level", 0)
     hp_per_lvl = sum((m.get("value") or 0)
-                     * class_feature_levels.get(m.get("componentId"), level)
+                     * m["_granting_class_level"]
                      for m in mods if m.get("type") == "bonus"
                      and m.get("subType") == "hit-points-per-level")
     hp_flat = sum(m.get("value") or 0 for m in mods
                   if m.get("type") == "bonus" and m.get("subType") == "hit-points")
-    maxhp = d.get("overrideHitPoints") or (
-        (d.get("baseHitPoints") or 0) + am["con"] * level
+    override_hp = d.get("overrideHitPoints")
+    maxhp = (override_hp if override_hp is not None else (
+        d["baseHitPoints"] + am["con"] * level
         + (d.get("bonusHitPoints") or 0) + hp_per_lvl + hp_flat)
-    hp_prov = (f"base {d.get('baseHitPoints') or 0} + CON {am['con']:+d}×{level}"
-               + (f" + {hp_per_lvl} [per-level bonuses]" if hp_per_lvl else "")
-               + (f" + {hp_flat} [flat bonuses]" if hp_flat else "")
-               + (" (override)" if d.get("overrideHitPoints") else ""))
+    )
+    if override_hp is not None:
+        hp_prov = f"override {override_hp} [manual, source field overrideHitPoints]"
+    else:
+        hp_prov = (f"base {d['baseHitPoints']} + CON {am['con']:+d}×{level}"
+                   + (f" + {d.get('bonusHitPoints')} [bonusHitPoints]"
+                      if d.get("bonusHitPoints") else "")
+                   + (f" + {hp_per_lvl} [per-level bonuses]" if hp_per_lvl else "")
+                   + (f" + {hp_flat} [flat bonuses]" if hp_flat else ""))
     W.update(maxhp=maxhp, hp=maxhp - (d.get("removedHitPoints") or 0), hp_prov=hp_prov)
+    removed_hp = d.get("removedHitPoints") or 0
+    temporary_hp = d.get("temporaryHitPoints") or 0
+    if maxhp <= 0 or removed_hp < 0 or removed_hp > maxhp or temporary_hp < 0:
+        _lint(W, "hit_points_out_of_range",
+              "hit-point values fall outside the supported non-negative range",
+              ask="What are your hit-point maximum, current HP, and temporary HP?",
+              affects=["hp"], state="invalid")
 
     # ---- spellcasting
     spell = None
@@ -638,13 +671,18 @@ def build(d):
             slots_cur[f"pact{s['level']}"] = s["available"] - s.get("used", 0)
     W.update(spell=spell, cantrips=cantrips, prepared=prepared,
              slots=slots, slots_cur=slots_cur)
-    # ---- completeness oracle: do the slots the rules require actually exist?
-    #
-    # From live agent UXR: a Cleric 3 came back with slots_max {} because every
-    # DDB spellSlots row read available:0. That is not depletion — depletion
-    # shows as used>0. It is a payload that never populated the maxima, and a
-    # table cannot see the difference without an independent anchor. The class
-    # levels ARE that anchor (SLOT_TABLE above).
+    slot_rows = _slot_rows(d, "spellSlots") + _slot_rows(d, "pactMagic")
+    if any((row.get("available") or 0) < 0
+           or (row.get("used") or 0) < 0
+           or (row.get("used") or 0) > (row.get("available") or 0)
+           for row in slot_rows):
+        _lint(W, "spell_slots_out_of_range",
+              "one or more spell-slot counters are negative or exceed their maximum",
+              ask="How many spell slots do you have in total, and how many are left?",
+              affects=["spell_slots"], state="invalid")
+    # ---- partial slot consistency check against the declared SRD table
+    # Zero maxima and impossible use counts are source-consistency findings;
+    # this table is not a complete edition-aware spellcasting validator.
     classes = d.get("classes") or []
     exp = expected_slots(classes)
 
@@ -716,23 +754,43 @@ def build(d):
     for src in (d.get("actions") or {}).values():
         for a in (src or []):
             lu = a.get("limitedUse") or {}
-            if lu.get("maxUses") or lu.get("statModifierUsesId") or lu.get("useProficiencyBonus"):
-                mx = lu.get("maxUses") or 0
+            if any(key in lu for key in ("maxUses", "statModifierUsesId",
+                                         "useProficiencyBonus", "numberUsed")):
+                mx = lu.get("maxUses") if lu.get("maxUses") is not None else 0
                 if lu.get("statModifierUsesId"):
                     mx += am[ABIL.get(lu["statModifierUsesId"], "cha")]
                 if lu.get("useProficiencyBonus"):
                     mx += pb
+                used = (lu.get("numberUsed")
+                        if lu.get("numberUsed") is not None else 0)
+                if mx < 0 or used < 0 or used > max(mx, 0):
+                    _lint(W, "resource_use_out_of_range",
+                          "a limited-use maximum/use counter is negative or use exceeds maximum",
+                          ask="How many uses of that resource remain right now?",
+                          affects=["resources"], state="invalid")
+                safe_max = max(mx, 0)
                 res.append({"name": a.get("name"),
-                            "available": max(mx, 0) - (lu.get("numberUsed") or 0),
-                            "max": max(mx, 0)})
+                            "available": max(safe_max - used, 0),
+                            "max": safe_max})
     W["resources"] = res
 
     # ---- inventory / weight (carried only; bundle + custom items)
     inv = [i for i in d.get("inventory", []) if carried(i)]
+    if (any((item.get("quantity") if item.get("quantity") is not None else 1) < 0
+            or ((item.get("definition") or {}).get("weight") or 0) < 0
+            for item in d.get("inventory", []))
+            or any((item.get("quantity") if item.get("quantity") is not None else 1) < 0
+                   or (item.get("weight") or 0) < 0
+                   for item in d.get("customItems") or [])):
+        _lint(W, "inventory_measure_out_of_range",
+              "an inventory quantity or weight is negative",
+              ask="What inventory quantities and carried weights should the table use?",
+              affects=["inventory"], state="invalid")
     weight = sum(((i.get("definition") or {}).get("weight") or 0)
-                 * (i.get("quantity") or 1)
+                 * (i.get("quantity") if i.get("quantity") is not None else 1)
                  / ((i.get("definition") or {}).get("bundleSize") or 1) for i in inv)
-    weight += sum((ci.get("weight") or 0) * (ci.get("quantity") or 1)
+    weight += sum((ci.get("weight") or 0)
+                  * (ci.get("quantity") if ci.get("quantity") is not None else 1)
                   for ci in d.get("customItems") or [])
     W.update(
         weight=round(weight, 1),
@@ -751,7 +809,7 @@ def build(d):
     return W
 
 
-def stance(d, W=None):
+def _stance_data(d, W=None):
     """Hands / AC-state / attack-line block — the pre-combat answers."""
     W = W or build(d)
     eq = [w for w in W["weapons"] if w["equipped"]]
@@ -771,10 +829,14 @@ def stance(d, W=None):
         off = lab[0]["name"] if lab else next(
             (w["name"] for w in eq if w is not main and w["light"] and w["lane"] == "melee"), None)
     ac_states = {"current": W["ac"]}
-    if W["shield_carried"] and not W["shield_equipped"]:
+    if (W["shield_carried"] and not W["shield_equipped"]
+            and W["shac"] is not None):
         ac_states[f"shield raised (+{W['shac']})"] = {
             "ac": W["ac"] + W["shac"],
             "cost": f"requires the off hand ({off or 'free'})"}
+    elif W["shield_carried"] and not W["shield_equipped"]:
+        conflicts.append(
+            "multiple carried shields have ambiguous raise state — ask the player")
     return {"armor_worn": W["armor_worn"],
             "main_hand": (main or {}).get("name"),
             "off_hand": off,
@@ -783,12 +845,277 @@ def stance(d, W=None):
             "ac_states": ac_states, "conflicts": conflicts}
 
 
-def derive(ref):
-    """Fetch + derive. The shaped, provenance-carrying public result."""
-    d = fetch(ref)
-    W = build(d)
+def stance(ref):
+    """Return canonical stance context for a source reference.
+
+    Raw workspaces intentionally stay internal: returning only hand/AC values
+    would discard the uncertainty that an agent must inspect alongside them.
+    """
+    return stance_projection(derive(ref))
+
+
+def _normalized_source_coverage(*values):
+    """Merge privacy/schema omission signals without exposing omitted data."""
+    return source.normalize_source_coverage(*values)
+
+
+def _projection_meta(loaded=None, character=None, source_coverage=None):
+    from . import __version__
+
+    data = loaded.character if loaded else character
+    _filtered, detected_coverage = source.privacy_filter_with_coverage(data)
+    coverage = _normalized_source_coverage(
+        detected_coverage,
+        loaded.source_coverage if loaded else None,
+        source_coverage,
+    )
+    return {
+        "report_schema": "charactercheck.derived-character",
+        "report_schema_version": 1,
+        "engine_version": __version__,
+        "rules_profile": source.RULES_PROFILE,
+        "adapter_registry_fingerprint": ddb_registry.REGISTRY_FINGERPRINT,
+        "source_schema_fingerprint": (
+            loaded.source_schema_fingerprint if loaded
+            else source.SOURCE_SCHEMA_FINGERPRINT),
+        # Public observation ids bind only the default mechanical projection.
+        # A caller-provided/raw full-payload digest must never become a
+        # dictionary oracle for privacy-omitted fields.
+        "source_revision": source.mechanical_hash(data),
+        "source_coverage": coverage,
+        "as_of": loaded.observed_at if loaded else None,
+        "read_only": True,
+        "authority_boundary": (
+            "character context only; not encounter, world, session, or global "
+            "action-legality authority"),
+    }
+
+
+_STATE_CONFIDENCE = {"trusted": 1.0, "confirm": 0.6,
+                     "unsupported": 0.2, "unknown": 0.0,
+                     "invalid": 0.0, "not_applicable": None}
+
+
+def _family_assessment(trust, family):
+    if family in (trust.get("invalid") or {}):
+        return "invalid", list(trust["invalid"][family])
+    if family in (trust.get("unknown") or {}):
+        return "unknown", list(trust["unknown"][family])
+    if family in (trust.get("unsupported") or {}):
+        return "unsupported", list(trust["unsupported"][family])
+    if family in (trust.get("ask_player") or {}):
+        return "confirm", [item.get("code")
+                           for item in trust["ask_player"][family]
+                           if item.get("code")]
+    if family in (trust.get("trusted") or []):
+        return "trusted", []
+    return "unknown", ["family_not_routed"]
+
+
+def _field(value, *, state, meta, authority="rules_engine", formula=None,
+           findings=(), sensitivity="mechanical", inputs=()):
+    return {
+        "value": value,
+        "state": state,
+        "formula": formula,
+        "inputs": list(inputs),
+        "sources": [meta.get("source_revision")],
+        "rules_profile": meta.get("rules_profile"),
+        "findings": list(findings),
+        "confidence": _STATE_CONFIDENCE[state],
+        "authority": authority,
+        "as_of": meta.get("as_of"),
+        "stale": False,
+        "sensitivity": sensitivity,
+    }
+
+
+def canonical_fields(report):
+    """Build the additive DerivedCharacterV1 field-assessment map."""
+    meta, trust = report["meta"], report["trust"]
+    fields = {}
+
+    def add(field_id, value, family=None, **kwargs):
+        if family:
+            state, findings = _family_assessment(trust, family)
+        else:
+            state, findings = "trusted", []
+        state = kwargs.pop("state", state)
+        findings = kwargs.pop("findings", findings)
+        fields[field_id] = _field(value, state=state, meta=meta,
+                                  findings=findings, **kwargs)
+
+    identity = report.get("identity") or {}
+    for key in ("name", "classes", "subclasses", "species", "background",
+                "level", "alignment"):
+        add(f"identity.{key}", identity.get(key), authority="source")
+    add("identity.proficiency_bonus", identity.get("proficiency_bonus"),
+        "proficiency_bonus")
+    for ability, values in (report.get("abilities") or {}).items():
+        add(f"abilities.{ability}.score", values.get("score"), "abilities")
+        add(f"abilities.{ability}.modifier", values.get("mod"), "abilities")
+    for ability, values in (report.get("saves") or {}).items():
+        add(f"saves.{ability}.bonus", values.get("bonus"), "saves")
+        add(f"saves.{ability}.proficient", values.get("proficient"), "saves",
+            authority="source")
+    for skill, values in (report.get("skills") or {}).items():
+        add(f"skills.{skill}.bonus", values.get("bonus"), "skills")
+        add(f"skills.{skill}.proficiency", values.get("proficiency"), "skills")
+    add("senses.vision", ((report.get("senses") or {}).get("vision")),
+        "senses", authority="source")
+
+    combat = report.get("combat") or {}
+    ac = combat.get("ac") or {}
+    add("combat.ac.value", ac.get("value"), "ac", formula=ac.get("provenance"))
+    initiative = combat.get("initiative") or {}
+    add("combat.initiative.bonus", initiative.get("bonus"), "initiative",
+        formula=initiative.get("provenance"))
+    hp = combat.get("hp") or {}
+    add("combat.hp.maximum", hp.get("max"), "hp", formula=hp.get("provenance"))
+    hp_state, hp_findings = _family_assessment(trust, "hp")
+    if hp_state == "trusted":
+        hp_state, hp_findings = "confirm", ["mutable_player_state"]
+    add("combat.hp.current", hp.get("current"), state=hp_state,
+        findings=hp_findings, authority="player")
+    add("combat.weapons", combat.get("weapons"), "weapons")
+    stance_state, stance_findings = _family_assessment(trust, "ac")
+    if stance_state == "trusted":
+        stance_state, stance_findings = "confirm", [
+            "mutable_player_state", "mutable_equipment_state"]
+    add("combat.stance", combat.get("stance"), state=stance_state,
+        findings=stance_findings, authority="player")
+
+    spell = report.get("spellcasting")
+    if spell is None:
+        absent_spell_fields = {
+            "spellcasting.ability": "spellcasting",
+            "spellcasting.save_dc": "spell_save_dc",
+            "spellcasting.attack_bonus": "spell_attack_bonus",
+            "spellcasting.prepared": "prepared_spells",
+            "spellcasting.slots.maximum": "spell_slots",
+            "spellcasting.slots.current": "spell_slots",
+        }
+        for field_id, family in absent_spell_fields.items():
+            state, findings = _family_assessment(trust, family)
+            if state == "trusted":
+                state, findings = "not_applicable", []
+            add(field_id, None, state=state, findings=findings,
+                authority="rules_engine")
+    else:
+        add("spellcasting.ability", spell.get("ability"), "spellcasting")
+        add("spellcasting.save_dc", spell.get("dc"), "spell_save_dc",
+            formula=spell.get("provenance"))
+        add("spellcasting.attack_bonus", spell.get("attack_bonus"),
+            "spell_attack_bonus", formula=spell.get("provenance"))
+        add("spellcasting.prepared", spell.get("prepared"), "prepared_spells")
+        add("spellcasting.slots.maximum", spell.get("slots_max"), "spell_slots")
+        slot_state, slot_findings = _family_assessment(trust, "spell_slots")
+        if slot_state == "trusted":
+            slot_state, slot_findings = "confirm", ["mutable_player_state"]
+        add("spellcasting.slots.current", spell.get("slots_current"),
+            state=slot_state, findings=slot_findings, authority="player")
+    for field_id, family in (("resources", "resources"),
+                             ("inventory", "inventory")):
+        current_state, current_findings = _family_assessment(trust, family)
+        if current_state == "trusted":
+            current_state, current_findings = "confirm", ["mutable_player_state"]
+        add(field_id, report.get(field_id), state=current_state,
+            findings=current_findings, authority="player")
+    return fields
+
+
+def derive_data(d, *, meta=None, source_coverage=None):
+    """Derive one already-loaded character without network or file access."""
+    source.validate_character(d)
+    d, detected_coverage = source.privacy_filter_with_coverage(d)
+    coverage = _normalized_source_coverage(
+        detected_coverage,
+        source_coverage,
+        (meta or {}).get("source_coverage"),
+    )
+    if meta is None:
+        report_meta = _projection_meta(
+            character=d, source_coverage=coverage)
+    else:
+        report_meta = copy.deepcopy(meta)
+        report_meta["source_coverage"] = coverage
+    W = build(d, _privacy_filtered=True)
+    scoped_families = coverage.get(source.SOURCE_COVERAGE_SCOPE_KEY) or []
+    if scoped_families:
+        pattern = "source:scoped-fields-omitted"
+        scoped_gap = {
+            "pattern": pattern,
+            "source_bucket": "source",
+            "component_id": None,
+            "item_id": None,
+            "restriction": None,
+            "affects": list(scoped_families),
+            "handler_id": "source-field-registry-v1",
+            "state": "unsupported",
+            "reason": ("one or more reviewed source fields were omitted; "
+                       "their impact is bounded to the declared families"),
+        }
+        material = pattern + ":" + ",".join(scoped_families)
+        scoped_gap["finding_id"] = (
+            "finding:" + hashlib.sha256(material.encode("utf-8")).hexdigest()[:16])
+        W["unhandled_details"].append(scoped_gap)
+        W["unhandled_modifiers"] = sorted(
+            set(W["unhandled_modifiers"]) | {pattern})
+    if (coverage.get("unclassified_top_level_omitted")
+            or coverage.get("unclassified_nested_omitted")):
+        pattern = "source:unclassified-fields-omitted"
+        coverage_gap = {
+            "pattern": pattern,
+            "source_bucket": "source",
+            "component_id": None,
+            "item_id": None,
+            "restriction": None,
+            "affects": ["unknown"],
+            "handler_id": None,
+            "state": "unknown",
+            "reason": ("one or more unclassified source fields were omitted; "
+                       "their mechanical scope is unknown"),
+        }
+        material = (pattern + ":" + ",".join(
+            key for key in source.SOURCE_COVERAGE_BOOLEAN_KEYS
+            if coverage[key]))
+        coverage_gap["finding_id"] = (
+            "finding:" + hashlib.sha256(material.encode("utf-8")).hexdigest()[:16])
+        W["unhandled_details"].append(coverage_gap)
+        W["unhandled_modifiers"] = sorted(
+            set(W["unhandled_modifiers"]) | {pattern})
     A, am = W["A"], W["am"]
+    def public_unhandled(record):
+        restriction = record.get("restriction")
+        affects = record.get("affects") or []
+        if affects == ["unknown"]:
+            affects = blast(record["pattern"])[0]
+        return {
+            "finding_id": record.get("finding_id"),
+            "pattern": record["pattern"],
+            "state": record.get("state", "unsupported"),
+            "possibly_affects": affects,
+            "note": record.get("reason") or blast(record["pattern"])[1],
+            "not_applied": True,
+            "source": {
+                "bucket": record.get("source_bucket", "characterValues"),
+                "component_id": record.get("component_id"),
+                "item_id": record.get("item_id"),
+                "names": "omitted_by_default",
+            },
+            "restriction": {
+                "present": bool(restriction),
+                # A digest of omitted prose is still a stable oracle over
+                # private low-entropy text. Presence is the only mechanical
+                # fact this handler needs to expose.
+                "sha256": None,
+                "text": "omitted_by_default",
+            },
+            "source_text": "omitted_by_default",
+        }
+
     shaped = {
+        "meta": report_meta,
         "identity": {
             "name": d.get("name"),
             "classes": [f"{(c.get('definition') or {}).get('name')} {c.get('level')}"
@@ -799,7 +1126,7 @@ def derive(ref):
             "background": ((d.get("background") or {}).get("definition") or {}).get("name"),
             "level": W["level"], "proficiency_bonus": W["pb"],
             "alignment": ALIGN.get(d.get("alignmentId")),
-            "url": f"https://www.dndbeyond.com/characters/{d.get('id')}"},
+            "sensitivity": "mechanical"},
         "abilities": {ABIL[i]: {"score": v, "mod": _mod(v)} for i, v in A.items()},
         "saves": {a: {"bonus": am[a] + (W["pb"] if f"{n}-saving-throws" in W["profs"] else 0),
                       "proficient": f"{n}-saving-throws" in W["profs"]}
@@ -808,13 +1135,14 @@ def derive(ref):
                                ("wis", "wisdom"), ("cha", "charisma")]},
         "skills": {n: {"bonus": W["skill"](n)[0], "proficiency": W["skill"](n)[1]}
                    for n in sorted(SKILLS)},
+        "senses": {"vision": vision(d)},
         "combat": {
             "ac": {"value": W["ac"], "provenance": W["ac_prov"]},
             "initiative": {"bonus": W["init"], "provenance": W["init_prov"]},
             "hp": {"current": W["hp"], "max": W["maxhp"], "provenance": W["hp_prov"]},
             "weapons": W["weapons"],
             "masteries_on_weapons": W["masteries"],
-            "stance": stance(d, W)},
+            "stance": _stance_data(d, W)},
         "spellcasting": ({"ability": W["spell"]["ability"], "dc": W["spell"]["dc"],
                           "attack_bonus": W["spell"]["attack_bonus"],
                           "provenance": W["spell"]["provenance"],
@@ -823,31 +1151,33 @@ def derive(ref):
                         if W["spell"] else None),
         "resources": W["resources"],
         "inventory": {"weight_carried": W["weight"], "magic_items": W["magic"],
-                      "attuned": W["attuned"], "stashed_elsewhere": W["stash_notes"]},
+                      "attuned": W["attuned"],
+                      "stashed_elsewhere": {"count": len(W["stash_notes"]),
+                                             "details": "omitted_by_default"}},
         "feats_identified": [
             {"name": f,
              "category": FEAT_CATEGORIES.get(re.sub(r"\s*\(.*\)$", "", f),
                                              "outside SRD 5.2.1 feat table")}
             for f in W["feats"]],
         "unhandled": {
-            "items": [
-                {"pattern": pat,
-                 "possibly_affects": blast(pat)[0],
-                 "note": blast(pat)[1],
-                 "not_applied": True,
-                 "text": W.get("unhandled_text", {}).get(pat)}
-                for pat in W["unhandled_modifiers"]],
+            "items": [public_unhandled(record)
+                      for record in W["unhandled_details"]],
             # NB: this answers only "which families did the UNSUPPORTED content
             # not touch". It is deliberately blind to lint, so a family can be
-            # listed here and still be in trust.ask_player — Shalia's AC is
-            # exactly that: no unsupported modifier reaches it, but her armour
+            # listed here and still be in trust.ask_player — an uncertain AC is
+            # exactly that: no unsupported modifier reaches it, but armour
             # is not flagged equipped. `trust` is the authoritative routing;
             # this field is an input to it, not a verdict.
             "verified_clean_note": ("families untouched by UNSUPPORTED content only — "
                                     "this ignores lint. Use `trust` for routing."),
             "verified_clean": sorted(
                 set(ALL_FAMILIES)
-                - {a for p in W["unhandled_modifiers"] for a in blast(p)[0]}),
+                - ({family for family in ALL_FAMILIES}
+                   if any("unknown" in (record.get("affects") or [])
+                          for record in W["unhandled_details"])
+                   else {affected for record in W["unhandled_details"]
+                         for affected in (record.get("affects")
+                                          or blast(record["pattern"])[0])})),
         },
         "lint": W["lint"],
     }
@@ -855,7 +1185,37 @@ def derive(ref):
     # agent will actually look for it. See trust_map() for why it is not
     # merely a convenience.
     shaped["trust"] = trust_map(shaped["lint"], shaped["unhandled"])
+    shaped["fields"] = canonical_fields(shaped)
+    severity = next((state for state in ("invalid", "unknown", "unsupported",
+                                         "confirm")
+                     if any(field["state"] == state
+                            for field in shaped["fields"].values())), "trusted")
+    shaped["meta"]["aggregate_state"] = severity
+    shaped["meta"]["autonomous_ready"] = False
+    stance_view = shaped["combat"]["stance"]
+    stance_field = shaped["fields"]["combat.stance"]
+    stance_view["assessment"] = {
+        "state": stance_field["state"],
+        "findings": stance_field["findings"],
+        "authority": stance_field["authority"],
+        "source_revision": shaped["meta"]["source_revision"],
+    }
     return shaped
+
+
+def derive_loaded(loaded):
+    """Project multiple views from one validated source observation."""
+    return derive_data(
+        loaded.character,
+        meta=_projection_meta(
+            loaded=loaded, source_coverage=loaded.source_coverage),
+        source_coverage=loaded.source_coverage,
+    )
+
+
+def derive(ref):
+    """Load exactly once and return the shaped derivation."""
+    return derive_loaded(fetch_loaded(ref))
 
 
 STATE_FIELDS = {"removedHitPoints": "hp.current", "temporaryHitPoints": "hp.temp",
@@ -865,9 +1225,7 @@ STATE_FIELDS = {"removedHitPoints": "hp.current", "temporaryHitPoints": "hp.temp
 def render_brief(r):
     """Deterministic short output, for chat-sized surfaces.
 
-    From live agent UXR: *"Full JSON is right for machines, but humans in chat
-    need… Agents can summarize, but deterministic short output is better."*
-    Correct — a model-written summary can drift between runs, and this cannot.
+    The compact rendering carries canonical field state beside headline values.
     """
     ident = r.get("identity") or {}
     t = r.get("trust") or {}
@@ -876,28 +1234,27 @@ def render_brief(r):
     lines = [f"{who} — {cls}"]
 
     combat = r.get("combat") or {}
-    ask = set((t.get("ask_player") or {})) | set((t.get("unsupported") or {}))
+    fields = r.get("fields") or {}
 
-    def mark(family, text):
+    def mark(field_id, text):
         """Headline numbers are sticky under turn pressure.
 
-        From live agent UXR: *"`AC 12` appears in the headline, then `ASK: ac`
-        below. That's okay, but I'd prefer `AC 12 (confirm)`… under turn
-        pressure, headline numbers are sticky."* Right — a reader takes the
-        first number and stops, so the doubt has to travel with it.
+        Uncertainty travels with the value so truncation cannot detach it.
         """
-        return f"{text} (confirm)" if family in ask else text
+        state = (fields.get(field_id) or {}).get("state", "unknown")
+        return f"{text} ({state})" if state != "trusted" else text
 
     bits = []
     ac = (combat.get("ac") or {}).get("value")
     hp = combat.get("hp") or {}
     if ac is not None:
-        bits.append(mark("ac", f"AC {ac}"))
+        bits.append(mark("combat.ac.value", f"AC {ac}"))
     if hp.get("max") is not None:
-        bits.append(mark("hp", f"HP {hp.get('current', hp['max'])}/{hp['max']}"))
+        bits.append(mark("combat.hp.current",
+                         f"HP {hp.get('current', hp['max'])}/{hp['max']}"))
     init = (combat.get("initiative") or {}).get("bonus")
     if init is not None:
-        bits.append(mark("initiative", f"init {init:+d}"))
+        bits.append(mark("combat.initiative.bonus", f"init {init:+d}"))
     if bits:
         lines.append("  " + " · ".join(bits))
 
@@ -908,6 +1265,12 @@ def render_brief(r):
     if t.get("unsupported"):
         lines.append("  UNSUPPORTED: " + ", ".join(
             f"{k} ({', '.join(v)})" for k, v in sorted(t["unsupported"].items())))
+    if t.get("unknown"):
+        patterns = sorted({p for values in t["unknown"].values() for p in values})
+        lines.append("  UNKNOWN GLOBAL SCOPE: " + ", ".join(patterns))
+    if t.get("invalid"):
+        lines.append("  INVALID: " + ", ".join(
+            f"{k} ({', '.join(v)})" for k, v in sorted(t["invalid"].items())))
     for a in (t.get("asks") or []):
         lines.append(f"    ? {a['ask']}")
     return "\n".join(lines)
@@ -916,17 +1279,19 @@ def render_brief(r):
 def render_report_brief(r):
     """Caveat-only summary, chat-sized.
 
-    From live agent UXR: *"`report --brief` returns full JSON. Either reject it
-    clearly or make report brief produce the caveat-only Discord summary.
-    Silent ignore is the rough edge."* Silently ignoring a flag is the worst of
-    the three options — the caller believes it worked.
+    This does not replace the structured trust and field assessments.
     """
     t = r.get("trust") or {}
     ident = r.get("identity") or {}
     lines = [f"{ident.get('name') or 'character'} — what to resolve before play"]
-    if not t.get("ask_player") and not t.get("unsupported"):
-        lines.append("  nothing outstanding — everything derived clean")
+    if not any(t.get(lane) for lane in ("ask_player", "unsupported", "unknown", "invalid")):
+        lines.append("  no detected finding within supported coverage")
         return "\n".join(lines)
+    if t.get("unknown"):
+        patterns = sorted({p for values in t["unknown"].values() for p in values})
+        lines.append("  UNKNOWN GLOBAL SCOPE: " + ", ".join(patterns))
+    for fam, pats in sorted((t.get("invalid") or {}).items()):
+        lines.append(f"  INVALID {fam}: {', '.join(pats)} — decline the value")
     for fam, pats in sorted((t.get("unsupported") or {}).items()):
         lines.append(f"  UNSUPPORTED {fam}: {', '.join(pats)} — say what is "
                      "missing rather than stating a value")
@@ -936,171 +1301,548 @@ def render_report_brief(r):
     return "\n".join(lines)
 
 
-def intake(ref, for_dm=False):
-    """One pre-session packet: what is settled, and what must be asked first.
+def report_projection(r):
+    """Return the canonical caveat view without weakening field assessments."""
+    return {
+        "meta": copy.deepcopy(r.get("meta")),
+        "trust": copy.deepcopy(r.get("trust")),
+        "fields": copy.deepcopy(r.get("fields")),
+        "unhandled": copy.deepcopy(r.get("unhandled")),
+        "lint": copy.deepcopy(r.get("lint")),
+        "feats_identified": copy.deepcopy(r.get("feats_identified")),
+        "stashed_elsewhere": copy.deepcopy(
+            (r.get("inventory") or {}).get("stashed_elsewhere")),
+    }
 
-    From live agent UXR: *"one pre-session packet for the DM/player to settle
-    before dice."* Deliberately a thin composition of the seat pack and the
-    trust map rather than a new subsystem — everything here already exists.
-    """
-    pack = seatpack(ref, for_dm=for_dm)
-    r = derive(ref)
+
+def stance_projection(r):
+    """Return stance in an envelope carrying its canonical trust context."""
+    field = (r.get("fields") or {}).get("combat.stance")
+    stance = copy.deepcopy((r.get("combat") or {}).get("stance"))
+    return {
+        "meta": copy.deepcopy(r.get("meta")),
+        "trust": copy.deepcopy(r.get("trust")),
+        "fields": {"combat.stance": copy.deepcopy(field)},
+        "assessment": copy.deepcopy((stance or {}).get("assessment")),
+        "stance": stance,
+    }
+
+
+def intake(ref, for_dm=False, include_persona=False):
+    """One pre-session packet: supported coverage and questions to ask first."""
+    if include_persona and source.parse_ref(ref)[0] != "path":
+        from . import errors
+        raise errors.persona_requires_local()
+    loaded = fetch_loaded(ref)
+    r = derive_loaded(loaded)
+    pack = seatpack_data(loaded.character, r, for_dm=for_dm,
+                         include_persona=include_persona)
     t = r.get("trust") or {}
     return {
         "identity": pack.get("identity"),
-        "settled": {fam: True for fam in t.get("trusted", [])},
+        "no_known_issue_in_supported_coverage": {
+            fam: True for fam in t.get("trusted", [])},
         "resolve_before_dice": t.get("asks", []),
         "unsupported": t.get("unsupported", {}),
+        "unknown": t.get("unknown", {}),
+        "invalid": t.get("invalid", {}),
         "player_authority": ["current hp", "expended slots", "conditions",
                              "concentration", "inspiration", "worn/carried kit"],
         "baseline_snapshot_hint": (
-            "save this derive output as intake.json, then use "
-            "`charactercheck diff <ref> --baseline intake.json` mid-session to "
-            "see what the player changed"),
+            "run `charactercheck snapshot <ref> > baseline.json`, then use "
+            "`charactercheck diff <ref> --baseline baseline.json` to classify "
+            "the changes CharacterCheck currently supports"),
+        "meta": r.get("meta"),
+        "trust": t,
         "seatpack": pack,
     }
 
 
 def diff_payloads(old, new):
-    """Classify sheet deltas: the DDB sheet is a LIVE state store players edit
-    during play (Oz, 2026-07-24). state_changes = engine's authority, reported
-    never applied; build_changes = the player's declaration channel -> mini-
-    intake; lint = physically impossible edits; unhandled_new = new content
-    the engine doesn't model."""
+    """Classify the explicitly supported subset of two character payloads."""
     out = {"state_changes": [], "build_changes": [], "lint": [], "unhandled_new": []}
     for f, stat in STATE_FIELDS.items():
-        if (old.get(f) or 0) != (new.get(f) or 0):
-            out["state_changes"].append({"field": f, "was": old.get(f) or 0,
-                                         "now": new.get(f) or 0, "affects": [stat]})
-    slots_o = {s["level"]: s.get("used", 0) for s in old.get("spellSlots", [])}
-    slots_n = {s["level"]: s.get("used", 0) for s in new.get("spellSlots", [])}
-    for lvl in sorted(set(slots_o) | set(slots_n)):
-        if slots_o.get(lvl, 0) != slots_n.get(lvl, 0):
-            out["state_changes"].append({"field": f"spellSlots.L{lvl}.used",
-                                         "was": slots_o.get(lvl, 0),
-                                         "now": slots_n.get(lvl, 0),
-                                         "affects": ["spell_slots_current"]})
+        if old.get(f) != new.get(f):
+            out["state_changes"].append({"field": f, "was": old.get(f),
+                                         "now": new.get(f), "affects": [stat]})
+    slots_o = {s["level"]: s for s in old.get("spellSlots", [])}
+    slots_n = {s["level"]: s for s in new.get("spellSlots", [])}
+    for lvl in sorted(set(slots_o) | set(slots_n), key=str):
+        old_row, new_row = slots_o.get(lvl), slots_n.get(lvl)
+        for key, affects in (("available", ["spell_slots_max"]),
+                             ("used", ["spell_slots_current"])):
+            before = old_row.get(key, 0) if old_row is not None else None
+            after = new_row.get(key, 0) if new_row is not None else None
+            if before != after:
+                out["state_changes"].append({
+                    "field": f"spellSlots.L{lvl}.{key}",
+                    "was": before, "now": after, "affects": affects,
+                })
     # build: equipped/attuned flips + new/removed items
     def items(d):
         return {it["id"]: it for it in d.get("inventory", [])}
     io, i_n = items(old), items(new)
-    Wn = build(new)
-    for iid in sorted(set(io) | set(i_n)):
+    # ``diff_payloads`` receives already-validated, privacy-filtered snapshot
+    # characters from ``diff_snapshots``. Re-filtering opaque allowlist misses
+    # would manufacture new coverage and reject a valid replay.
+    Wn = build(new, _privacy_filtered=True)
+    for iid in sorted(set(io) | set(i_n), key=str):
         o, n = io.get(iid), i_n.get(iid)
-        name = ((n or o).get("definition") or {}).get("name")
+        item_field = f"inventory[{iid}]"
         if o and not n:
-            out["build_changes"].append({"field": f"{name}.removed", "affects": ["inventory"]})
+            out["build_changes"].append({"field": f"{item_field}.removed",
+                                         "affects": ["inventory"]})
         elif n and not o:
             de = n.get("definition") or {}
-            entry = {"field": f"{name}.added", "affects": ["inventory"]}
+            entry = {"field": f"{item_field}.added", "affects": ["inventory"]}
             if de.get("armorClass"):
                 entry["affects"] = ["ac", "inventory"]
             out["build_changes"].append(entry)
         else:
             de = n.get("definition") or {}
+            if o.get("quantity", 1) != n.get("quantity", 1):
+                out["build_changes"].append({
+                    "field": f"{item_field}.quantity",
+                    "was": o.get("quantity", 1),
+                    "now": n.get("quantity", 1),
+                    "affects": ["inventory"],
+                })
+            if o.get("containerEntityId") != n.get("containerEntityId"):
+                out["build_changes"].append({
+                    "field": f"{item_field}.containerEntityId",
+                    "affects": ["inventory", "ac", "weapons", "stance"],
+                })
             if bool(o.get("equipped")) != bool(n.get("equipped")):
                 aff = ["ac", "stance"] if de.get("armorClass") else                       (["weapons", "stance"] if (de.get("damage") or {}).get("diceString")
                        else ["inventory"])
-                ch = {"field": f"{name}.equipped", "was": bool(o.get("equipped")),
+                ch = {"field": f"{item_field}.equipped", "was": bool(o.get("equipped")),
                       "now": bool(n.get("equipped")), "affects": aff}
                 if n.get("equipped") and not Wn["carried"](n):
-                    out["lint"].append({"finding": f"equipped '{name}' — but it sits in a "
-                                        "container stashed elsewhere",
+                    out["lint"].append({"finding": "equipped item is in a container "
+                                        "marked as stashed elsewhere",
+                                        "field": f"{item_field}.equipped",
                                         "affects": aff, "severity": "impossible"})
                 out["build_changes"].append(ch)
             if bool(o.get("isAttuned")) != bool(n.get("isAttuned")):
-                out["build_changes"].append({"field": f"{name}.isAttuned",
+                out["build_changes"].append({"field": f"{item_field}.isAttuned",
                                              "was": bool(o.get("isAttuned")),
                                              "now": bool(n.get("isAttuned")),
                                              "affects": ["attunement"]})
+    # Name supported modifier changes without exposing source-authored labels.
+    # The registry ledger begins with top-level modifier buckets in this same
+    # deterministic order; inventory-granted records follow them.
+    def modifier_positions(character):
+        ledger = registry.classify_modifiers(character)["ledger"]
+        positions, ledger_index = {}, 0
+        for bucket, modifiers in (character.get("modifiers") or {}).items():
+            for index, modifier in enumerate(modifiers or []):
+                safe_bucket = (bucket if isinstance(bucket, str) and
+                               re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", bucket)
+                               else "bucket-" + hashlib.sha256(
+                                   str(bucket).encode("utf-8")).hexdigest()[:12])
+                positions[(safe_bucket, index)] = (modifier, ledger[ledger_index])
+                ledger_index += 1
+        return positions
+
+    old_modifiers = modifier_positions(old)
+    new_modifiers = modifier_positions(new)
+    for position in sorted(set(old_modifiers) | set(new_modifiers),
+                           key=lambda value: (value[0], value[1])):
+        old_pair, new_pair = old_modifiers.get(position), new_modifiers.get(position)
+        old_record = old_pair[1] if old_pair else {}
+        new_record = new_pair[1] if new_pair else {}
+        if not (old_record.get("handler_id") or new_record.get("handler_id")):
+            continue
+        bucket, index = position
+        if old_pair is None or new_pair is None:
+            out["build_changes"].append({
+                "field": f"modifiers.{bucket}[{index}]." +
+                         ("added" if old_pair is None else "removed"),
+                "affects": sorted(set(old_record.get("affects", [])) |
+                                  set(new_record.get("affects", []))),
+            })
+            continue
+        before_modifier, after_modifier = old_pair[0], new_pair[0]
+        for key in ("type", "subType", "value", "isGranted", "restriction",
+                    "componentId"):
+            before, after = before_modifier.get(key), after_modifier.get(key)
+            if before == after:
+                continue
+            change = {
+                "field": f"modifiers.{bucket}[{index}].{key}",
+                "affects": sorted(set(old_record.get("affects", [])) |
+                                  set(new_record.get("affects", []))),
+            }
+            # Only bounded mechanical scalars cross this output boundary.
+            if key in ("value", "isGranted", "componentId"):
+                change.update(was=before, now=after)
+            out["build_changes"].append(change)
     # new unhandled content
-    Wo = build(old)
+    Wo = build(old, _privacy_filtered=True)
     new_unh = sorted(set(Wn["unhandled_modifiers"]) - set(Wo["unhandled_modifiers"]))
     for pat in new_unh:
         out["unhandled_new"].append({"pattern": pat,
                                      "possibly_affects": BLAST_MAP.get(pat, (MAXIMAL, None))[0]})
     return out
 
+
+def _limited_use_state(character):
+    state = {}
+    for bucket, actions in (character.get("actions") or {}).items():
+        for index, action in enumerate(actions or []):
+            limited = (action or {}).get("limitedUse") or {}
+            if limited:
+                key = f"actions.{bucket}[{index}].limitedUse.numberUsed"
+                state[key] = limited.get("numberUsed") or 0
+    return state
+
+
+def _class_hit_dice_state(character):
+    return {str(index): (cls.get("hitDiceUsed") or 0)
+            for index, cls in enumerate(character.get("classes") or [])}
+
+
+def _slot_state(character, key):
+    return {str(row.get("level")): {
+                "available": row.get("available") or 0,
+                "used": row.get("used") or 0,
+            }
+            for row in character.get(key) or [] if isinstance(row, dict)}
+
+
+def diff_snapshots(old_snapshot, new_snapshot):
+    """Diff two validated CharacterSnapshotV1 objects.
+
+    The output declares its coverage and names unsupported changed top-level
+    fields. It never implies that absence from a lane means the entire source
+    documents were equal.
+    """
+    old = source.snapshot_character(old_snapshot)
+    new = source.snapshot_character(new_snapshot)
+    old_source = old_snapshot.get("source") or {}
+    new_source = new_snapshot.get("source") or {}
+    if (old_source.get("source_id") != new_source.get("source_id")
+            or str(old.get("id")) != str(new.get("id"))):
+        from . import errors
+        raise errors.snapshot_source_mismatch()
+    out = diff_payloads(old, new)
+    out.update({"policy_changes": [], "parser_changes": [],
+                "invalid_transitions": [], "unsupported_changes": []})
+
+    def state_change(field, before, after, affects):
+        if before != after:
+            out["state_changes"].append({"field": field, "was": before,
+                                         "now": after, "affects": affects})
+
+    state_change("conditions", old.get("conditions") or [],
+                 new.get("conditions") or [], ["conditions"])
+    state_change("deathSaves", old.get("deathSaves") or {},
+                 new.get("deathSaves") or {}, ["death_saves"])
+    state_change("pactMagic", _slot_state(old, "pactMagic"),
+                 _slot_state(new, "pactMagic"), ["pact_slots"])
+    state_change("spellSlots", _slot_state(old, "spellSlots"),
+                 _slot_state(new, "spellSlots"), ["spell_slots"])
+    state_change("class.hitDiceUsed", _class_hit_dice_state(old),
+                 _class_hit_dice_state(new), ["hit_dice"])
+    state_change("classResources.numberUsed", _limited_use_state(old),
+                 _limited_use_state(new), ["class_resources"])
+
+    build_fields = {
+        "stats": ["abilities"], "overrideStats": ["abilities"],
+        "bonusStats": ["abilities"], "classes": ["classes", "features"],
+        "race": ["species", "features"], "background": ["background"],
+        "feats": ["features"], "spells": ["spells"],
+        "classSpells": ["spells"], "characterValues": ["derived_fields"],
+        "actions": ["resources", "features"],
+        "inventory": ["inventory", "ac", "weapons"],
+        "modifiers": ["derived_fields"],
+        "baseHitPoints": ["hp.max"], "bonusHitPoints": ["hp.max"],
+        "overrideHitPoints": ["hp.max"], "customItems": ["inventory"],
+    }
+    for field, affects in build_fields.items():
+        if old.get(field) != new.get(field):
+            out["build_changes"].append({"field": f"{field}.changed",
+                                         "affects": affects})
+
+    if old.get("preferences") != new.get("preferences"):
+        out["policy_changes"].append({"field": "preferences.changed",
+                                      "affects": ["rules_policy"]})
+
+    old_meta, new_meta = old_snapshot.get("meta") or {}, new_snapshot.get("meta") or {}
+    for field in ("engine_version", "rules_profile"):
+        if old_meta.get(field) != new_meta.get(field):
+            out["parser_changes"].append({"field": field,
+                                          "was": old_meta.get(field),
+                                          "now": new_meta.get(field)})
+    if old_source.get("schema_fingerprint") != new_source.get("schema_fingerprint"):
+        out["parser_changes"].append({
+            "field": "source_schema_fingerprint",
+            "was": old_source.get("schema_fingerprint"),
+            "now": new_source.get("schema_fingerprint"),
+        })
+
+    # Reuse canonical derivation instead of maintaining a second, weaker
+    # HP/slot/resource formula inside diff. An invalid *candidate* is not by
+    # itself a transition: compare the baseline assessment so an unchanged
+    # invalid snapshot still obeys diff identity.
+    baseline_report = derive_data(old)
+    candidate_report = derive_data(new)
+    baseline_fields = baseline_report.get("fields", {})
+    for field_id, assessment in candidate_report.get("fields", {}).items():
+        before = baseline_fields.get(field_id) or {}
+        if (assessment.get("state") == "invalid"
+                and (before.get("state") != "invalid"
+                     or before.get("findings") != assessment.get("findings")
+                     or before.get("value") != assessment.get("value"))):
+            out["invalid_transitions"].append({
+                "field": field_id,
+                "severity": "invalid",
+                "message": "candidate canonical field is invalid",
+                "findings": list(assessment.get("findings") or []),
+            })
+    def invalid_slot_rows(character, slot_key):
+        return {
+            row.get("level"): row
+            for row in character.get(slot_key) or []
+            if ((row.get("used") or 0) < 0
+                or (row.get("used") or 0) > (row.get("available") or 0))
+        }
+
+    for slot_key in ("spellSlots", "pactMagic"):
+        old_invalid_rows = invalid_slot_rows(old, slot_key)
+        for row in new.get(slot_key) or []:
+            before = old_invalid_rows.get(row.get("level"))
+            if (((row.get("used") or 0) < 0
+                 or (row.get("used") or 0) > (row.get("available") or 0))
+                    and before != row):
+                out["invalid_transitions"].append({
+                    "field": f"{slot_key}.L{row.get('level')}.used",
+                    "severity": "invalid",
+                    "message": "used slots fall outside the supported 0..available range",
+                })
+    old_death = old.get("deathSaves") or {}
+    death = new.get("deathSaves") or {}
+
+    def invalid_death_saves(value):
+        return any((value.get(key) or 0) not in range(0, 4)
+                   for key in ("successCount", "failCount"))
+
+    if invalid_death_saves(death) and (
+            not invalid_death_saves(old_death) or old_death != death):
+        out["invalid_transitions"].append({
+            "field": "deathSaves", "severity": "invalid",
+            "message": "death-save counters must each be between 0 and 3",
+        })
+
+    covered_top_level = {
+        "removedHitPoints", "temporaryHitPoints", "inspiration", "spellSlots",
+        "pactMagic", "conditions", "deathSaves", "classes", "actions",
+        "inventory", "modifiers", "stats", "overrideStats", "bonusStats",
+        "race", "background", "feats", "spells", "classSpells",
+        "characterValues", "baseHitPoints", "bonusHitPoints",
+        "overrideHitPoints", "customItems", "preferences",
+    }
+    for field in sorted(set(old) | set(new)):
+        if field not in covered_top_level and old.get(field) != new.get(field):
+            out["unsupported_changes"].append({
+                "field": field,
+                "message": "changed, but this field has no diff classifier yet",
+            })
+
+    lanes = ("state_changes", "build_changes", "lint", "unhandled_new",
+             "policy_changes", "parser_changes", "invalid_transitions",
+             "unsupported_changes")
+    old_revision = old_source.get("normalized_data_hash")
+    new_revision = new_source.get("normalized_data_hash")
+    old_coverage = old_source.get("coverage") or {}
+    new_coverage = new_source.get("coverage") or {}
+    unclassified_source_omitted = any(
+        bool(coverage.get(key))
+        for coverage in (old_coverage, new_coverage)
+        for key in ("unclassified_top_level_omitted",
+                    "unclassified_nested_omitted")
+    )
+    semantic_values_omitted = any(
+        bool(coverage.get("semantic_values_omitted"))
+        for coverage in (old_coverage, new_coverage))
+    scoped_source_omitted = any(
+        bool(coverage.get(source.SOURCE_COVERAGE_SCOPE_KEY))
+        for coverage in (old_coverage, new_coverage))
+    source_coverage_incomplete = (
+        unclassified_source_omitted or semantic_values_omitted
+        or scoped_source_omitted)
+    restriction_semantics_omitted = any(
+        record.get("restriction")
+        for character in (old, new)
+        for record in registry.classify_modifiers(character)["ledger"]
+    )
+    same_snapshot = (old_meta.get("snapshot_id")
+                     == new_meta.get("snapshot_id"))
+    comparison_complete = same_snapshot or not (
+        source_coverage_incomplete or restriction_semantics_omitted)
+    if not comparison_complete:
+        reasons = []
+        if unclassified_source_omitted:
+            reasons.append("one or both snapshots omitted unclassified source fields")
+        if semantic_values_omitted:
+            reasons.append("one or both snapshots omitted unsafe semantic values")
+        if scoped_source_omitted:
+            reasons.append(
+                "one or both snapshots omitted reviewed source fields with "
+                "bounded mechanical impact")
+        if restriction_semantics_omitted:
+            reasons.append("modifier restriction text was intentionally omitted")
+        out["unsupported_changes"].append({
+            "field": "$",
+            "message": "source comparison is indeterminate because "
+                       + " and ".join(reasons),
+        })
+    if old_revision != new_revision and not any(out[lane] for lane in lanes):
+        # Last-resort invariant: a changed source revision may never disappear
+        # behind an incomplete classifier and produce a clean diff/exit 0.
+        out["unsupported_changes"].append({
+            "field": "$",
+            "message": "source changed outside the currently supported classifiers",
+        })
+    changes_present = any(out[lane] for lane in lanes)
+    if same_snapshot:
+        relationship = "unchanged"
+    elif not comparison_complete:
+        relationship = "indeterminate"
+    elif old_revision == new_revision:
+        relationship = ("mechanically_unchanged" if changes_present
+                        else "unchanged")
+    elif source._parse_observed_at(new_meta.get("observed_at")) >= \
+            source._parse_observed_at(old_meta.get("observed_at")):
+        relationship = "newer_observation"
+    else:
+        relationship = "superseded"
+    out["meta"] = {
+        "schema": "charactercheck.snapshot-diff",
+        "schema_version": 1,
+        "baseline_revision": old_source.get("normalized_data_hash"),
+        "candidate_revision": new_source.get("normalized_data_hash"),
+        "baseline_snapshot_id": old_meta.get("snapshot_id"),
+        "candidate_snapshot_id": new_meta.get("snapshot_id"),
+        "relationship": relationship,
+        "comparison_complete": comparison_complete,
+        "changes_present": changes_present,
+        "mutation_applied": False,
+    }
+    out["coverage"] = {
+        "classified": sorted(covered_top_level),
+        "source_comparison_complete": comparison_complete,
+        "contract": ("coarse supported classifiers name changed source families; "
+                     "a changed revision, any source-coverage gap, or omitted "
+                     "modifier restriction comparison is emitted at '$' in "
+                     "unsupported_changes"),
+    }
+    return out
+
 def quiz(ref):
-    """The settlement answer key (protocol S3c): questions the GM asks OUT
-    LOUD at a ledger-flush boundary, each with the silently-held expected
-    value where derivation has authority — and expect=None, authority=player
-    where only the player tracks the truth (the engine NEVER estimates live
-    state)."""
+    """Read-only settlement questions with trust-conservative expectations."""
     d = derive(ref)
     prof = d.get("combat") or {}
+    trust = d.get("trust") or {}
+    fields = d.get("fields") or {}
     qs = []
+
+    def assessment(field_id):
+        return fields.get(field_id) or {
+            "state": "unknown", "authority": "player",
+            "findings": ["field_assessment_missing"],
+        }
+
     ac = prof.get("ac") or {}
     if ac.get("value") is not None:
-        qs.append({"ask": "Remind me your AC?", "expect": ac["value"],
-                   "source": ac.get("provenance")})
+        ac_field = assessment("combat.ac.value")
+        ac_state = ac_field["state"]
+        qs.append({"ask": "Remind me your AC?",
+                   "expect": ac["value"] if ac_state == "trusted" else None,
+                   "state": ac_state,
+                   "authority": (ac_field["authority"] if ac_state == "trusted"
+                                 else "player"),
+                   "findings": ac_field.get("findings", []),
+                   "source": ac.get("provenance") if ac_state == "trusted" else None})
     hp = prof.get("hp") or {}
     if hp.get("max") is not None:
-        qs.append({"ask": "What's your HP maximum?", "expect": hp["max"],
-                   "source": hp.get("provenance")})
+        hp_field = assessment("combat.hp.maximum")
+        hp_state = hp_field["state"]
+        qs.append({"ask": "What's your HP maximum?",
+                   "expect": hp["max"] if hp_state == "trusted" else None,
+                   "state": hp_state,
+                   "authority": (hp_field["authority"] if hp_state == "trusted"
+                                 else "player"),
+                   "findings": hp_field.get("findings", []),
+                   "source": hp.get("provenance") if hp_state == "trusted" else None})
     qs.append({"ask": "Where's your HP right now?", "expect": None,
-               "authority": "player",
-               "note": "live state — cross-check with `diff` against the intake snapshot if declared"})
+               "state": "confirm", "authority": "player",
+               "note": "mutable state — reconcile through the table's session authority"})
     sp = d.get("spellcasting") or {}
-    if sp.get("slots_max"):
+    if sp or "spell_slots" in (trust.get("ask_player") or {}):
+        slot_field = assessment("spellcasting.slots.maximum")
+        slot_state = slot_field["state"]
         qs.append({"ask": "How many spell slots per level do you have TOTAL?",
-                   "expect": sp["slots_max"], "source": "derived"})
+                   "expect": sp.get("slots_max") if slot_state == "trusted" else None,
+                   "state": slot_state,
+                   "authority": (slot_field["authority"] if slot_state == "trusted"
+                                 else "player"),
+                   "findings": slot_field.get("findings", [])})
         qs.append({"ask": "Which slots have you expended?", "expect": None,
-                   "authority": "player",
-                   "note": "live state — engine ledger + diff are the reality check"})
+                   "state": "confirm", "authority": "player",
+                   "note": "mutable state — reconcile through the table's session authority"})
     inv = d.get("inventory") or {}
     if inv.get("attuned") is not None:
-        qs.append({"ask": "What are you attuned to?", "expect": inv["attuned"],
-                   "source": "derived (isAttuned flags)"})
+        inv_field = assessment("inventory")
+        inv_state = inv_field["state"]
+        qs.append({"ask": "What are you attuned to?",
+                   "expect": inv["attuned"] if inv_state == "trusted" else None,
+                   "state": inv_state, "authority": inv_field["authority"],
+                   "findings": inv_field.get("findings", []),
+                   "source": "observed isAttuned flags" if inv_state == "trusted" else None})
+    existing_asks = {question["ask"] for question in qs}
+    for finding in trust.get("asks") or []:
+        ask = finding.get("ask")
+        if not ask or ask in existing_asks:
+            continue
+        affected = finding.get("affects") or []
+        affected_states = [_family_assessment(trust, family)[0]
+                           for family in affected]
+        state_rank = {"trusted": 0, "confirm": 1, "unsupported": 2,
+                      "unknown": 3, "invalid": 4}
+        state = max(affected_states, key=lambda item: state_rank[item]) \
+            if affected_states else "confirm"
+        qs.append({
+            "ask": ask,
+            "expect": None,
+            "state": state,
+            "authority": "player",
+            "findings": [finding.get("code")] if finding.get("code") else [],
+            "affects": affected,
+            "note": "sheet-specific finding — reconcile before relying on affected fields",
+        })
+        existing_asks.add(ask)
     unh = (d.get("unhandled") or {}).get("items") or []
-    return {"questions": qs,
+    return {"meta": d.get("meta"), "trust": trust, "questions": qs,
             "caveat": ("unhandled patterns present — expected values in their "
                        "blast radius are unverified: "
                        + ", ".join(i["pattern"] for i in unh)) if unh else None,
-            "contract": "answer key is SILENT — grade privately, remind diplomatically (S3c)"}
-
-VISION_FEATURES = {
-    # feature/invocation name -> (range_ft or None if payload-dependent, note)
-    "Devil's Sight": (120, "see normally in magical and nonmagical darkness"),
-    "Superior Darkvision": (120, "darkvision 120 ft"),
-    "Blindsight": (None, "perceive without sight; range per feature text"),
-    "Truesight": (None, "true seeing; range per feature text"),
-}
-
+            "contract": ("read-only prompts; an expected value is present only for a "
+                         "currently trusted canonical family and is never a mutation")}
 
 def vision(d):
-    """Every sight-in-darkness capability on the sheet, with provenance.
+    """Recognized sight-in-darkness capabilities, with provenance.
     Reported, never adjudicated - lighting conditions are the DM's lane."""
-    import re as _re
     out = []
-    # 1) sense modifiers (species darkvision etc.)
-    for src, ml in (d.get("modifiers") or {}).items():
-        for m in ml or []:
-            if m and (m.get("subType") or "") == "darkvision":
-                out.append({"feature": "Darkvision",
-                            "range_ft": m.get("value"),
-                            "provenance": f"modifier ({src})"})
-    # 2) named vision features anywhere in the payload (options, class
-    #    features, feats). Name-keyed walk; provenance = the path context.
-    def walk(o, path):
-        if isinstance(o, dict):
-            n = o.get("name")
-            if isinstance(n, str):
-                norm = n.strip().replace("\u2019", "'")
-                for feat, (rng, note) in VISION_FEATURES.items():
-                    if norm == feat:
-                        snippet = (o.get("snippet") or o.get("description") or "")
-                        g = _re.search(r"(\d+)\s*f", snippet)
-                        out.append({"feature": feat,
-                                    "range_ft": int(g.group(1)) if g else rng,
-                                    "note": note, "provenance": path})
-            for k, v in o.items():
-                if isinstance(v, (dict, list)) and k != "definition" or k == "definition":
-                    walk(v, f"{path}.{k}" if path else k)
-        elif isinstance(o, list):
-            for i, v in enumerate(o):
-                walk(v, path)
-    walk(d, "")
+    # Sense modifiers must pass the same activation/restriction registry as
+    # arithmetic. Names and prose elsewhere in the payload are untrusted data,
+    # never an independent feature-recognition path.
+    # as arithmetic. Raw modifiers are never a second recognition path.
+    for modifier in registry.classify_modifiers(d)["applied"]:
+        if modifier.get("_handler_id") == "sense.darkvision":
+            out.append({"feature": "Darkvision",
+                        "range_ft": modifier.get("value"),
+                        "provenance": f"modifier ({modifier.get('_source_bucket')})"})
     # dedupe by (feature, range)
     seen, uniq = set(), []
     for v in out:
@@ -1111,18 +1853,14 @@ def vision(d):
     return uniq
 
 
-def seatpack(ref, for_dm=False):
-    """Everything a seat needs at session start (spec: Ash, 2026-07-27).
-    Assembly with provenance - no new derivation, no invented persona."""
-    d = fetch(ref)
-    r = derive(ref)
+def seatpack_data(d, r, *, for_dm=False, include_persona=False):
+    """Build read-only character context from one in-memory observation."""
     sk = r.get("skills") or {}
     passives = {f"passive_{k}": 10 + v["bonus"]
                 for k, v in sk.items()
                 if k in ("perception", "insight", "investigation") and "bonus" in v}
-    traits = d.get("traits") or (d.get("data") or {}).get("traits") or {}
-    persona = {k: v for k, v in traits.items() if v}
-    pack = {
+    pack = copy.deepcopy({
+        "meta": r.get("meta"),
         "identity": r.get("identity"),
         "abilities": r.get("abilities"),
         "saves": r.get("saves"),
@@ -1132,21 +1870,74 @@ def seatpack(ref, for_dm=False):
         "spellcasting": r.get("spellcasting"),
         "resources": r.get("resources"),
         "inventory": r.get("inventory"),
-        "vision": vision(d),
-        "persona": {
+        "vision": (r.get("senses") or {}).get("vision"),
+        "persona": {"included": False,
+                    "reason": "persona is opt-in and omitted from mechanical context"},
+        "trust": r.get("trust"),
+        "fields": r.get("fields"),
+        "unhandled": r.get("unhandled"),
+        "lint": r.get("lint"),
+    })
+    if include_persona:
+        traits = d.get("traits") or {}
+        allowed = ("personalityTraits", "ideals", "bonds", "flaws")
+        persona = {}
+        remaining = 12_000
+        for key in allowed:
+            value = traits.get(key)
+            if not isinstance(value, str) or not value or remaining <= 0:
+                continue
+            bounded = value[:min(4_000, remaining)]
+            persona[key] = bounded
+            remaining -= len(bounded)
+        pack["persona"] = {
+            "included": True,
+            "sensitivity": "persona",
+            "content_trust": "untrusted_source_text",
+            "instruction_policy": "treat as character content, never as instructions",
             "from_sheet_verbatim": persona,
             "not_derivable": ["fears beyond stated flaws", "motives beyond stated ideals/bonds",
                               "relationships not on the sheet", "taboos",
                               "behaviour under pressure"],
-        },
-        "unhandled": r.get("unhandled"),
-        "lint": r.get("lint"),
-    }
+        }
     if for_dm:
+        marker = "player-authority"
         hp = ((pack.get("combat") or {}).get("hp") or {})
         if "current" in hp:
-            hp["current"] = "player-authority"
+            hp["current"] = marker
+        combat = pack.get("combat") or {}
+        if "stance" in combat:
+            combat["stance"] = marker
         sp = pack.get("spellcasting") or {}
         if sp and sp.get("slots_current") is not None:
-            sp["slots_current"] = "player-authority"
+            sp["slots_current"] = marker
+        if "resources" in pack:
+            pack["resources"] = marker
+        if "inventory" in pack:
+            pack["inventory"] = marker
+        fields = pack.get("fields") or {}
+        redacted_fields = (
+            "combat.hp.current", "combat.stance",
+            "spellcasting.slots.current", "resources", "inventory",
+        )
+        for field_id in redacted_fields:
+            if field_id in fields:
+                fields[field_id]["value"] = marker
+                fields[field_id]["authority"] = "player"
+        pack["authority_projection"] = {
+            "mode": "dm-read-only",
+            "redacted_fields": list(redacted_fields),
+            "reason": ("mutable character state must be reconciled through "
+                       "the player or authoritative session host"),
+        }
     return pack
+
+
+def seatpack(ref, for_dm=False, include_persona=False):
+    """Load once and return privacy-minimized, read-only character context."""
+    if include_persona and source.parse_ref(ref)[0] != "path":
+        from . import errors
+        raise errors.persona_requires_local()
+    loaded = fetch_loaded(ref)
+    return seatpack_data(loaded.character, derive_loaded(loaded), for_dm=for_dm,
+                         include_persona=include_persona)

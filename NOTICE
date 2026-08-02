@@ -3,6 +3,25 @@ charactercheck
 Independent implementation. Schema semantics for the D&D Beyond
 character-service v5 payload were partly informed by reading the source of
 MrPrimate/ddb-importer (MIT, Copyright (c) 2019 Sebastian Will, (c) 2020 Jack
-Holloway) — no code was copied. The 100-question QA schema was authored by the
-project owner. D&D Beyond is a trademark of Wizards of the Coast; this project
-is unofficial and unaffiliated, and reads only publicly shared character sheets.
+Holloway). The initial pinned offline adapter registry was independently
+observed and cross-checked against that project's fallback registry; narrow
+mapping facts and its snapshot/fallback design were adapted with attribution.
+See THIRD_PARTY_NOTICES.md. The 100-row Coverage Inventory was authored by the
+project owner and is an extraction inventory, not rules validation.
+
+This work includes material from the System Reference Document 5.2.1 (“SRD
+5.2.1”) by Wizards of the Coast LLC, available at
+https://www.dndbeyond.com/srd. The SRD 5.2.1 is licensed under the Creative
+Commons Attribution 4.0 International License, available at
+https://creativecommons.org/licenses/by/4.0/legalcode.
+
+CharacterCheck modifies selected SRD 5.2.1 material by representing feat
+categories, class classifications, and multiclass spell-slot progression as
+partial executable lookup data and identifiers. It does not reproduce the SRD
+as a whole. Project code remains under the MIT License; this notice does not
+relicense third-party material.
+
+D&D Beyond and Dungeons & Dragons are trademarks of Wizards of the Coast. This
+project is unofficial, independent, unaffiliated, and not endorsed by Wizards
+of the Coast. Retrieval support is limited to explicitly public share sources;
+public availability is not treated as consent for publication or reuse.

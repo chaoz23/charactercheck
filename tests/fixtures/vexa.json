@@ -1,6 +1,5 @@
 {
  "data": {
-  "username": "fixture-bot",
   "overrideStats": [
    {
     "id": 1,
@@ -60,12 +59,6 @@
   "inspiration": false,
   "alignmentId": 2,
   "currentXp": 900,
-  "age": 30,
-  "height": "5'10\"",
-  "weight": 170,
-  "hair": "brown",
-  "skin": "tan",
-  "eyes": "grey",
   "deathSaves": {
    "successCount": null,
    "failCount": null
@@ -97,15 +90,6 @@
    "race": [],
    "item": [],
    "feat": []
-  },
-  "notes": {
-   "organizations": null
-  },
-  "traits": {
-   "personalityTraits": "steady",
-   "ideals": "duty",
-   "bonds": "the order",
-   "flaws": "stubborn"
   },
   "currencies": {
    "cp": 0,
@@ -254,6 +238,12 @@
        "id": 7001,
        "name": "Hex Warrior"
       }
+     },
+     {
+      "definition": {
+       "id": 7002,
+       "name": "Synthetic Stamina Training"
+      }
      }
     ]
    }
@@ -265,7 +255,7 @@
      "subType": "charisma-score",
      "value": 2,
      "statId": null,
-     "componentId": null,
+     "componentId": 7001,
      "isGranted": true,
      "friendlySubtypeName": null
     },
@@ -369,7 +359,7 @@
      "subType": "hit-points-per-level",
      "value": 1,
      "statId": null,
-     "componentId": null,
+     "componentId": 7002,
      "isGranted": true,
      "friendlySubtypeName": null
     },
