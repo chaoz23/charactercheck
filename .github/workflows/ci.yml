@@ -138,6 +138,23 @@ jobs:
           /tmp/charactercheck-cold/bin/charactercheck --schema > /tmp/charactercheck-schema.json
           grep -q '"snapshot"' /tmp/charactercheck-schema.json
           grep -q '"internal_error"' /tmp/charactercheck-schema.json
+          grep -q '"table_evaluation"' /tmp/charactercheck-schema.json
+
+      - name: Installed shared result is value-free and fail-closed
+        working-directory: /tmp
+        env: *offline-network
+        run: |
+          sample=/tmp/charactercheck-cold/lib/python3.12/site-packages/charactercheck/sample-character.json
+          set +e
+          /tmp/charactercheck-cold/bin/charactercheck derive "$sample" \
+            --table-evaluation > /tmp/charactercheck-evaluation.json
+          code=$?
+          set -e
+          test $code -eq 2 || { echo "expected unsupported exit 2, got $code"; exit 1; }
+          grep -q '"schema_version": "table.evaluation/1.0"' /tmp/charactercheck-evaluation.json
+          grep -q '"status": "unsupported"' /tmp/charactercheck-evaluation.json
+          grep -q '"authority_status": "self_attested"' /tmp/charactercheck-evaluation.json
+          grep -qv 'Torvald Brightmantle' /tmp/charactercheck-evaluation.json
 
       - name: Installed MCP initializes and lists tools without network
         working-directory: /tmp

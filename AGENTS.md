@@ -16,6 +16,7 @@ Run the offline smoke test first:
 ```console
 python3 -m charactercheck selftest
 python3 -m charactercheck derive examples/sample-character.json --brief
+python3 -m charactercheck derive examples/sample-character.json --table-evaluation
 ```
 
 The example is project-authored synthetic data. A smoke-test pass proves only
@@ -83,6 +84,11 @@ Treat `source_coverage` as a terminal instruction to use a canonical view.
 The local `--for-dm` projection marks every duplicate of current HP/slots,
 stance, resources, and inventory as `player-authority`; it is a redaction mode,
 not authentication or proof of table role.
+
+`derive` and `report` accept `--table-evaluation` for a deterministic,
+value-free `table.evaluation/1.0` projection. Treat mutable player-authority
+fields as out-of-scope advisories, not evaluator-owned facts. Every envelope is
+`self_attested` and remains pre-session character context only.
 
 ## Privacy and capability boundary
 

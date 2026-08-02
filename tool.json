@@ -13,6 +13,7 @@
   "example": "python3 -m charactercheck derive examples/sample-character.json --brief",
   "commands": {
     "charactercheck derive <ref> [--brief]": "selected derivation plus canonical fields, findings, trust, and observation metadata",
+    "charactercheck derive <ref> --table-evaluation": "value-free deterministic self-attested table.evaluation/1.0 assessment envelope; also accepted by report",
     "charactercheck stance <ref>": "stance envelope with canonical assessment, findings, trust, and observation metadata",
     "charactercheck qa <ref> [--full]": "100-question Coverage Inventory pairing answers with closed states; not validity",
     "charactercheck report <ref> [--brief]": "canonical fields/trust plus findings and identified feature names",
@@ -70,9 +71,17 @@
     "diff_invariant": "distinct snapshots with any nonempty omission coverage or omitted modifier restriction semantics emit $ in unsupported_changes and relationship indeterminate; same-revision named non-mechanical deltas are mechanically_unchanged; exact identity is unchanged"
   },
   "library": {
-    "canonical": "package-level derive(ref) and stance(ref) preserve trust and source coverage",
+    "canonical": "package-level derive(ref), stance(ref), and project_table_evaluation(report) preserve trust and source coverage",
     "plain_fetch": "fetch(ref) raises source_coverage when returning a plain character would discard omission metadata",
     "raw_workspace": "build is not package-exported; engine.build also raises source_coverage on incomplete raw sources"
+  },
+  "shared_evaluation": {
+    "schema_version": "table.evaluation/1.0",
+    "authority_status": "self_attested",
+    "privacy": "field states, authority labels, bounded evidence codes, and source/policy digests only; no character values",
+    "mutable_state": "player-authority mutable fields are out-of-scope advisories requiring player/session-host reconciliation",
+    "exit_codes": "0 checked_clean; 1 complete with advisories/findings; 2 incomplete, unsupported, invalid, or internal_error",
+    "boundary": "pre-session character context only; not source authentication, freshness, encounter/session authority, or action legality"
   },
   "mcp": {
     "command": "charactercheck-mcp",
