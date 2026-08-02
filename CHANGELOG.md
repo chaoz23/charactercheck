@@ -1,15 +1,33 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 (release candidate)
 
 - Pair every Coverage Inventory answer with its numbered 2024 character-sheet
   question, and include deduplicated sheet-specific lint questions in `quiz`
   without supplying answer keys for non-trusted mechanics.
+- Interpret selected D&D Beyond builder choices as activation evidence for
+  choice-backed proficiencies, languages, and tools even when the associated
+  modifier retains `isGranted: false`; preserve only the mechanical join IDs.
+- Treat `equipped` as authoritative for armor, shields, and active weapon
+  attacks. Carried armor no longer silently changes AC; an Unarmed Strike is
+  synthesized as an available 2024 attack, and a weapon's Sap/Push/etc.
+  property is no longer reported as a learned mastery.
+- Derive ordinary spell-slot maxima from the pinned SRD progression and use
+  D&D Beyond's `used` counter as mutable state. The public payload's observed
+  zero `available` value no longer erases valid 4/2 Cleric 3 slots.
+- Add source-aware spell profiles that distinguish prepared, always-prepared,
+  always-known, and granted availability from at-will, limited-free, and
+  spell-slot cast modes. Enriched `alwaysPreparedSpells`,
+  `alwaysKnownSpells`, and `cantrips` collections are supported without
+  guessing absent subclass spells from prose.
+- Preserve death-save activation versus latent counters, keep D&D Beyond's
+  `isStabilized` flag separate from rules-implied three-success stability, and
+  identify exhaustion only from D&D Beyond condition id 4.
 
-This section describes source changes after the published 0.6.2 artifact. The
-tree still carries `0.6.2` package/version metadata during review; that is not
-a claim that PyPI contains these changes. A future release must use a new,
-previously unpublished version and update `server.json` in the same release.
+This section describes the 0.7.0 release candidate after the published 0.6.2
+artifact. Version metadata is prepared, but this heading is not a claim that
+PyPI or the MCP Registry contains 0.7.0; publication requires the documented
+artifact, install, tag, and public-package gates.
 
 - Reframed the product as experimental read-only character context for human
   and AI seats, with explicit authority and limitations.

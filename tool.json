@@ -1,15 +1,15 @@
 {
   "name": "charactercheck",
-  "version": "0.6.2",
-  "status": "unreleased-post-0.6.2-source-contract",
+  "version": "0.7.0",
+  "status": "0.7.0-release-candidate",
   "distribution": {
-    "source": "This manifest describes the unreleased checkout containing it.",
-    "published": "PyPI latest is the historical 0.6.2 artifact and does not contain this safety contract.",
-    "version_warning": "The checkout temporarily retains 0.6.2 metadata; assign a new version before any publication."
+    "source": "This manifest describes the 0.7.0 release candidate checkout.",
+    "published": "Do not infer publication from source metadata; verify the signed/tagged artifact and PyPI separately.",
+    "version_warning": "0.7.0 is a release candidate until the release gates, tag, and public-package verification pass."
   },
-  "description": "Unreleased read-only compilation of selected D&D Beyond character fields into mechanical context, canonical assessments, provenance, findings, and versioned snapshots.",
+  "description": "Read-only compilation of selected D&D Beyond character fields into mechanical context, canonical assessments, provenance, findings, and versioned snapshots.",
   "boundary": "Not complete rules validation, encounter/world/session state, role enforcement, or proof of action legality. No mutations are exposed.",
-  "install": "pip install charactercheck installs the historical published 0.6.2 contract; run the checkout with python3 -m charactercheck for this unreleased contract",
+  "install": "Before 0.7.0 publication, run the checkout with python3 -m charactercheck; after publication, pin charactercheck==0.7.0",
   "example": "python3 -m charactercheck derive examples/sample-character.json --brief",
   "commands": {
     "charactercheck derive <ref> [--brief]": "selected derivation plus canonical fields, findings, trust, and observation metadata",

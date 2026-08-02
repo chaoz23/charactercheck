@@ -26,7 +26,7 @@ def run(ref, _with_context=False):
         rows.append((n, key, status, value))
 
     def best(lane):
-        c = [w for w in W["weapons"] if w["lane"] == lane]
+        c = [w for w in W["active_attacks"] if w["lane"] == lane]
         return max(c, key=lambda w: w["attack_bonus"]) if c else None
 
     def active_feature_names(features, character_level=None):
@@ -69,9 +69,7 @@ def run(ref, _with_context=False):
     ds = d.get("deathSaves") or {}
     add(16, "deathSavesSuccesses", "OK", ds.get("successCount") or 0)
     add(17, "deathSavesFailures", "OK", ds.get("failCount") or 0)
-    exh = next((c.get("level") for c in d.get("conditions", [])
-                if c.get("level") is not None), 0)
-    add(18, "exhaustionLevel", "OK", exh)
+    add(18, "exhaustionLevel", "OK", W["exhaustion"])
     add(19, "heroicInspiration", "OK", bool(d.get("inspiration")))
     add(20, "armorClass", "OK", f"{W['ac']} ({W['ac_prov']})")
     add(21, "proficiencyBonus", "OK", pb)
@@ -130,7 +128,8 @@ def run(ref, _with_context=False):
     res = [f"{r['name']}: {r['available']}/{r['max']}" for r in W["resources"]]
     add(74, "classResource", "OK" if res else "PARTIAL", res or "(none found in actions)")
     add(75, "weaponMasteriesKnown", "PARTIAL",
-        f"{W['masteries']} (from carried weapons' properties; class grant not verified)")
+        f"{W['masteries']} (requires explicit learned-mastery evidence; "
+        f"weapon properties present: {W['weapon_mastery_properties']})")
     add(76, "activeMasteries", "OK", W["active_masteries"] or "(none)")
     m, r = best("melee"), best("ranged")
     add(77, "primaryMeleeWeaponName", "OK", (m or {}).get("name") or "(none)")

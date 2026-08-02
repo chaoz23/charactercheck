@@ -5,12 +5,12 @@ character-sheet fields. It turns a public share, saved character-service JSON,
 or versioned snapshot into deterministic mechanical context with provenance and
 named findings.
 
-> **Unreleased source contract.** This README describes the post-0.6.2 source
-> tree under review. PyPI currently serves the historical 0.6.2 artifact, which
+> **0.7.0 release candidate.** This README describes the source tree prepared
+> for 0.7.0. Until publication is separately verified, PyPI serves the
+> historical 0.6.2 artifact, which
 > predates the strict input, privacy, snapshot, canonical field-state, and MCP
-> changes documented below. The source tree still reports `0.6.2` while the
-> next release version is being chosen; version text alone therefore cannot
-> distinguish the two contracts. The MCP Registry also still resolves to the
+> changes documented below. Source version text does not prove that the
+> release was published. The MCP Registry also still resolves to the
 > historical published package. No remediated package or registry entry has
 > been published.
 
@@ -19,7 +19,7 @@ not encounter, world, or session state and does not prove that an action is
 legal. Unknown upstream fields and unsupported restrictions can affect results;
 read the trust and finding data before using a value.
 
-## Run the unreleased source offline
+## Run the 0.7.0 release candidate offline
 
 Python 3.9 or newer is required. The runtime has no third-party dependencies.
 
@@ -47,9 +47,8 @@ The direct `python3 -m charactercheck` path has no runtime dependency install.
 An editable pip install may bootstrap the `setuptools` build frontend if the
 environment does not already provide it.
 
-For historical-release reproduction only, `pip install charactercheck`
-installs the published 0.6.2 artifact. It does **not** install the unreleased
-contract described by the rest of this README; see
+Until 0.7.0 publication is verified, `pip install charactercheck` installs the
+published 0.6.2 artifact. It does **not** install this release candidate; see
 [MIGRATING.md](https://github.com/chaoz23/charactercheck/blob/main/MIGRATING.md)
 before comparing its output or MCP surface with this checkout.
 
@@ -232,7 +231,7 @@ Diff reports candidates or uncertainty only and never applies a change.
 
 ## Trust and canonical field semantics
 
-The unreleased `trust` block routes every known stat family into one exclusive
+The `trust` block routes every known stat family into one exclusive
 lane:
 
 - `trusted`: no detected finding reaches the field within this version's
@@ -263,6 +262,33 @@ Views must preserve or worsen trust; they may not remove a material finding.
 Consumers should read `meta`, `fields`, `trust`, `lint`, and `unhandled` rather
 than treating an aggregate state as proof of completeness. See
 [SUPPORT.md](https://github.com/chaoz23/charactercheck/blob/main/SUPPORT.md).
+
+### D&D Beyond mechanics represented in report schema v2
+
+- Builder-choice rows are joined to modifiers by stable mechanical IDs. This
+  recovers selected skills, languages, and standard tools even when D&D Beyond
+  leaves the modifier's `isGranted` flag false. Builder labels and unselected
+  option catalogs are not retained.
+- Armor and shield AC requires `equipped: true`. `combat.weapons` remains an
+  inventory view; `combat.active_attacks` is the action-facing view and
+  includes the 2024 Unarmed Strike. A weapon mastery property is reported
+  separately from `masteries_known` and is never treated as proof that the
+  character learned it.
+- Ordinary `slots_max` comes from the pinned SRD progression and
+  `slots_current` subtracts D&D Beyond's `used` counters. Source-aware
+  `spell_profiles` preserve availability and cast modes when the source
+  exposes them.
+- Public anonymous character payloads can omit class/subclass
+  always-prepared spell collections even when the signed-in sheet displays
+  them. CharacterCheck accepts enriched `alwaysPreparedSpells`,
+  `alwaysKnownSpells`, and `cantrips` collections, but does not invent an
+  absent domain/species/feat spell grant from feature prose. That lane remains
+  unsupported until direct source evidence or a pinned edition-aware resolver
+  is available.
+- Death-save counters expose `active` versus `latent`; source
+  `isStabilized` and rules-implied three-success stability remain distinct.
+  Exhaustion is read from D&D Beyond condition id 4, not from any condition
+  that happens to carry a level.
 
 ## Privacy and untrusted text
 
