@@ -203,7 +203,8 @@ class TestCanonicalFieldContract(unittest.TestCase):
             field_id: field for field_id, field in report["fields"].items()
             if field_id.startswith("spellcasting.")
         }
-        self.assertEqual(len(spell_fields), 6)
+        self.assertEqual(len(spell_fields), 7)
+        self.assertIn("spellcasting.output_modifiers", spell_fields)
         for field_id, field in spell_fields.items():
             with self.subTest(field=field_id):
                 self.assertEqual(field["state"], "not_applicable")

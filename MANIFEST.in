@@ -14,6 +14,7 @@ include llms.txt
 include server.json
 include tool.json
 recursive-include charactercheck *.json *.py
+recursive-include docs *.md
 recursive-include examples *.json
 recursive-include tests *.json *.py
 global-exclude __pycache__ *.py[cod]

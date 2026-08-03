@@ -75,6 +75,12 @@ ECOSYSTEM:
   complete rules engine. DDB, Foundry, and other outputs are attributed claims
   or oracles; unexplained disagreement remains non-trusted conflict.
 
+OBSERVED DIRECT FACTS:
+  Report schema v2 can expose reviewed walking speed, darkvision, magical-sleep
+  immunity, closed conditional-save evidence, and spell-group healing bonuses.
+  Treat each canonical field's state as authoritative over the rendered value;
+  other omitted mechanics can still leave the same family unsupported.
+
 EXIT (command-specific):
   derive/report: 0 no lint/unhandled, 1 lint only, 2 any unhandled record.
   diff: 0 complete and unchanged, 1 any named change or indeterminate omitted-

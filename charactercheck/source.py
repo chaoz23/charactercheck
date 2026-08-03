@@ -1107,7 +1107,7 @@ _MECHANICAL_TOP_LEVEL = {
     "overrideHitPoints", "removedHitPoints", "temporaryHitPoints",
     "currentXp", "alignmentId", "inspiration", "conditions", "feats",
     "spellSlots", "pactMagic", "currencies", "deathSaves", "customItems",
-    "preferences", "choices",
+    "preferences", "choices", "options",
 }
 _SAFE_PREFERENCE_KEYS = {
     "enableOptionalClassFeatures", "enableOptionalOrigins", "encumbranceType",
@@ -1253,6 +1253,12 @@ def _sanitize_modifier(value, coverage, path):
         key for key in source_field_registry.MODIFIER_SEMANTIC_KEYS
         if key in value and value[key] not in (None, False, "", [], {})
     }
+    # DDB commonly duplicates the already-retained integer ``value`` in
+    # ``fixedValue``. Exact numeric equality contributes no additional
+    # semantics and must not manufacture a coverage gap.
+    if (type(value.get("value")) is int
+            and value.get("fixedValue") == value.get("value")):
+        omitted_semantics.discard("fixedValue")
     if omitted_semantics:
         spec = semantic_registry.handler_for(value)
         scope = (spec.affects if spec is not None
@@ -1273,7 +1279,8 @@ def _sanitize_modifier(value, coverage, path):
     if isinstance(restriction, str) and restriction:
         # Its presence changes whether a handler can be applied, while its
         # player/source-authored prose must not cross the snapshot boundary.
-        out["restriction"] = "present; source text omitted"
+        out["restriction"] = (semantic_registry.normalize_restriction(
+            restriction) or "present; source text omitted")
     return out
 
 
@@ -1470,10 +1477,94 @@ def _sanitize_choices(value, coverage):
         if entries is None:
             out[safe_bucket] = None
             continue
-        out[safe_bucket] = [
-            _closed_object(row, _CHOICE_KEYS, coverage, path="choices[]")
-            for row in entries if isinstance(row, dict)
-        ]
+        rows = []
+        for row in entries:
+            if not isinstance(row, dict):
+                continue
+            # Labels/order and the inactive option universe do not identify
+            # the active selection. ``optionValue`` is the activation join.
+            ignored = {"displayOrder", "label", "optionIds"}
+            if row.get("optionValue") is not None and row.get("subType"):
+                ignored.add("defaultSubtypes")
+            rows.append(_closed_object(
+                row, _CHOICE_KEYS, coverage, path="choices[]",
+                ignored=ignored))
+        out[safe_bucket] = rows
+    return out
+
+
+_OPTION_BUCKETS = frozenset({"race", "class", "background", "feat", "item"})
+_OPTION_METADATA_KEYS = frozenset({
+    "entityTypeId", "name", "sourceId", "sourcePageNumber",
+})
+_OPTION_MECHANICAL_SCOPES = {
+    "activation": frozenset({"attacks", "resources"}),
+    "creatureRules": frozenset({"attacks", "defenses", "resources"}),
+    "spellListIds": frozenset({
+        "spellcasting", "spell_save_dc", "spell_attack_bonus",
+        "spell_output", "prepared_spells",
+    }),
+}
+
+
+def _selected_option_ids(choices):
+    selected = {}
+    for bucket, rows in (choices or {}).items():
+        if bucket not in _OPTION_BUCKETS or not isinstance(rows, list):
+            continue
+        for row in rows:
+            if isinstance(row, dict) and row.get("optionValue") is not None:
+                selected.setdefault(bucket, set()).add(str(row["optionValue"]))
+    return selected
+
+
+def _sanitize_options(value, choices, coverage):
+    """Retain only explicitly selected option IDs and route their mechanics.
+
+    The builder's inactive option catalog is not character state. Selected
+    definitions can still carry structured mechanics, so nonempty reviewed
+    mechanical keys produce narrow coverage rather than being ignored.
+    """
+    if not isinstance(value, dict):
+        coverage["unclassified_nested_omitted"] = True
+        return {}
+    selected = _selected_option_ids(choices)
+    out = {}
+    for bucket, rows in value.items():
+        if bucket not in _OPTION_BUCKETS:
+            if rows not in (None, [], {}):
+                coverage["unclassified_nested_omitted"] = True
+            continue
+        if rows is None:
+            out[bucket] = None
+            continue
+        if not isinstance(rows, list):
+            coverage["unclassified_nested_omitted"] = True
+            continue
+        kept = []
+        for row in rows:
+            if not isinstance(row, dict):
+                coverage["unclassified_nested_omitted"] = True
+                continue
+            definition = row.get("definition") or {}
+            identifier = definition.get("id") if isinstance(definition, dict) else None
+            if str(identifier) not in selected.get(bucket, set()):
+                continue
+            clean = _closed_object(
+                row, {"componentId", "componentTypeId", "definition"},
+                coverage, path=f"options.{bucket}[]")
+            clean_definition = {"id": identifier}
+            for key, child in definition.items():
+                if key == "id" or key in _OPTION_METADATA_KEYS or _privacy_key(key):
+                    continue
+                scope = _OPTION_MECHANICAL_SCOPES.get(key)
+                if scope is None:
+                    coverage["unclassified_nested_omitted"] = True
+                elif child not in (None, False, "", [], {}):
+                    coverage[SOURCE_COVERAGE_SCOPE_KEY].update(scope)
+            clean["definition"] = clean_definition
+            kept.append(clean)
+        out[bucket] = kept
     return out
 
 
@@ -1576,6 +1667,9 @@ def _privacy_filter_with_coverage(character, *, include_persona=False):
             value["modifiers"], _sanitize_modifier, coverage, "modifiers")
     if isinstance(value.get("choices"), dict):
         value["choices"] = _sanitize_choices(value["choices"], coverage)
+    if "options" in value:
+        value["options"] = _sanitize_options(
+            value["options"], value.get("choices"), coverage)
 
     filtered_values = []
     for record in value.get("characterValues") or []:

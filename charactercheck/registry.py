@@ -45,7 +45,9 @@ class HandlerSpec:
     affects: tuple
     mode: str = "apply"
     requires_number: bool = False
+    accepts_stat_id: bool = False
     restrictions_supported: bool = False
+    restriction_codes: tuple = ()
     rules_profiles: tuple = ("srd-5.2.1-partial",)
 
 
@@ -66,7 +68,8 @@ for ability in ABILITIES:
                           ["attacks", "weapons"]))
 for skill in SKILLS:
     HANDLERS.append(_spec(f"skill.bonus.{skill}", "bonus", skill,
-                          ["skills"], requires_number=True))
+                          ["skills"], requires_number=True,
+                          accepts_stat_id=True))
     HANDLERS.append(_spec(f"skill.expertise.{skill}", "expertise", skill,
                           ["skills"]))
     HANDLERS.append(_spec(f"skill.half.{skill}", "half-proficiency", skill,
@@ -88,6 +91,19 @@ HANDLERS.extend((
           requires_number=True),
     _spec("sense.darkvision", "sense", "darkvision", ["senses"],
           requires_number=True, mode="pass_through"),
+    _spec("sense.darkvision.base", "set-base", "darkvision", ["senses"],
+          requires_number=True, mode="pass_through"),
+    _spec("speed.walking.base", "set", "innate-speed-walking", ["speeds"],
+          requires_number=True, mode="pass_through"),
+    _spec("defense.magical-sleep", "immunity", "magical-sleep",
+          ["defenses"], mode="pass_through"),
+    _spec("save.advantage.charmed", "advantage", "saving-throws", ["saves"],
+          mode="pass_through", restrictions_supported=True,
+          restriction_codes=("condition:charmed:avoid-or-end",)),
+    _spec("spell.healing.bonus", "bonus", "spell-group-healing",
+          ["spell_output"], requires_number=True, mode="pass_through"),
+    _spec("class.subclass.selection", "set", "subclass", (),
+          mode="structural"),
 ))
 
 HANDLER_BY_PATTERN = {(spec.type_name, spec.subtype): spec for spec in HANDLERS}
@@ -119,6 +135,18 @@ CHARACTER_VALUE_SKILL_IDS = frozenset(
 SUPPORTED_MODIFIER_BUCKETS = frozenset(
     ("race", "class", "background", "feat", "condition", "item"))
 MAX_MECHANICAL_MAGNITUDE = 1_000_000
+
+_RESTRICTION_CODE_BY_TEXT = {
+    "Made to avoid or end the Charmed condition":
+        "condition:charmed:avoid-or-end",
+}
+
+
+def normalize_restriction(value):
+    """Map reviewed upstream prose to a closed, inert semantic code."""
+    if not isinstance(value, str) or not value:
+        return None
+    return _RESTRICTION_CODE_BY_TEXT.get(value)
 
 
 # Fixed-code adapter/evaluator gaps. Reasons and blast radii are code-owned;
@@ -463,6 +491,45 @@ def _selected_choice_evidence(character, bucket, modifier):
     return None
 
 
+def _selected_option_evidence(character, bucket, modifier):
+    """Resolve a modifier whose component is an explicitly selected option.
+
+    Some DDB option-granted effects use the selected option definition ID as
+    ``componentId`` rather than the parent feature ID. The selected value is
+    already present in the source-bucket choice row; inactive option catalogs
+    are not activation evidence.
+    """
+    component_id = modifier.get("componentId")
+    if type(component_id) is not int:
+        return None
+    for choice in (character.get("choices") or {}).get(bucket) or []:
+        option_id = choice.get("optionValue")
+        if type(option_id) is not int or option_id != component_id:
+            continue
+        return {
+            "kind": "selected_option",
+            "option_id": component_id,
+            "option_selected": True,
+        }
+    return None
+
+
+def _race_base_speed_evidence(character, bucket, modifier):
+    """Corroborate DDB's race speed modifier against the explicit speed row."""
+    if (bucket != "race" or modifier.get("type") != "set"
+            or modifier.get("subType") != "innate-speed-walking"):
+        return None
+    walk = (((character.get("race") or {}).get("weightSpeeds") or {})
+            .get("normal") or {}).get("walk")
+    value = modifier.get("value")
+    if (type(walk) is int and type(value) is int and walk == value):
+        return {
+            "kind": "race_base_speed_matches",
+            "speed_ft": value,
+        }
+    return None
+
+
 def classify_modifiers(character):
     """Return ``ledger`` and the only modifiers arithmetic may consume."""
     inventory_activation = _inventory_activation(character)
@@ -532,19 +599,25 @@ def classify_modifiers(character):
         component_id = modifier.get("componentId")
         choice_evidence = _selected_choice_evidence(
             character, bucket, modifier)
-        if choice_evidence:
-            record["activation_evidence"] = choice_evidence
-        if modifier.get("isGranted") is False and not choice_evidence:
+        option_evidence = _selected_option_evidence(
+            character, bucket, modifier)
+        speed_evidence = _race_base_speed_evidence(
+            character, bucket, modifier)
+        source_evidence = choice_evidence or option_evidence or speed_evidence
+        if source_evidence:
+            record["activation_evidence"] = source_evidence
+        if modifier.get("isGranted") is False and not source_evidence:
             record.update(state="inactive",
                           reason="no selected builder-choice evidence")
-        elif modifier.get("isGranted") is not True and not choice_evidence:
+        elif modifier.get("isGranted") is not True and not source_evidence:
             record.update(state="unsupported",
                           reason="granting evidence is missing or malformed")
         elif bucket not in SUPPORTED_MODIFIER_BUCKETS:
             record.update(state="unsupported",
                           reason="modifier source bucket is not supported")
         elif component_id is not None and item is None \
-                and component_id not in known_components:
+                and component_id not in known_components \
+                and not source_evidence:
             record.update(state="unsupported",
                           reason="granting source component could not be resolved")
         elif feature_activation.get(component_id) is False:
@@ -562,13 +635,19 @@ def classify_modifiers(character):
             record.update(state="inactive", reason="activation evidence is false")
         elif not spec:
             record.update(state="unsupported", reason="no registered handler")
-        elif record["restriction"] and not spec.restrictions_supported:
+        elif record["restriction"] and (
+                not spec.restrictions_supported
+                or record["restriction"] not in spec.restriction_codes):
             record.update(state="unsupported",
                           reason="restriction semantics are not supported")
         elif spec.requires_number and (
-                not isinstance(modifier.get("value"), int)
-                or isinstance(modifier.get("value"), bool)
-                or abs(modifier.get("value")) > MAX_MECHANICAL_MAGNITUDE):
+                (not isinstance(modifier.get("value"), int)
+                 or isinstance(modifier.get("value"), bool)
+                 or abs(modifier.get("value")) > MAX_MECHANICAL_MAGNITUDE)
+                and not (spec.accepts_stat_id
+                         and modifier.get("value") is None
+                         and type(modifier.get("statId")) is int
+                         and modifier.get("statId") in range(1, 7))):
             record.update(state="invalid",
                           reason="handler requires a finite integer value")
         elif spec.handler_id == "hp.per-level" and (
@@ -577,16 +656,19 @@ def classify_modifiers(character):
             record.update(state="unsupported",
                           reason="granting class level could not be resolved unambiguously")
         else:
-            record.update(state="applied" if spec.mode == "apply" else "pass_through",
-                          reason=None)
-            normalized = dict(modifier)
-            normalized["_handler_id"] = spec.handler_id
-            normalized["_source_bucket"] = bucket
-            if (spec.handler_id == "hp.per-level"
-                    and component_id in feature_class_levels):
-                normalized["_granting_class_level"] = next(iter(
-                    feature_class_levels[component_id]))
-            applied.append(normalized)
+            record.update(
+                state=("structural" if spec.mode == "structural" else
+                       "applied" if spec.mode == "apply" else "pass_through"),
+                reason=None)
+            if spec.mode != "structural":
+                normalized = dict(modifier)
+                normalized["_handler_id"] = spec.handler_id
+                normalized["_source_bucket"] = bucket
+                if (spec.handler_id == "hp.per-level"
+                        and component_id in feature_class_levels):
+                    normalized["_granting_class_level"] = next(iter(
+                        feature_class_levels[component_id]))
+                applied.append(normalized)
         record["finding_id"] = _finding_id(record)
         ledger.append(record)
     return {"ledger": ledger, "applied": applied}

@@ -47,12 +47,15 @@ ACTION = frozenset({"attacks", "saves", "resources"})
 # None means the key remains truly unclassified. An empty set means the key is
 # reviewed non-mechanical metadata that may be omitted without changing trust.
 TOP_LEVEL = {
-    "activeSourceCategories": SPELL,
+    # Builder filters and score-generation method describe how the UI was
+    # configured, not additional mechanics beyond the explicit selected
+    # character records retained by this adapter.
+    "activeSourceCategories": frozenset(),
     "adjustmentXp": frozenset({"resources"}),
     "canEdit": frozenset(),
     "choices": CLASS_BUILD | RACE_BUILD | BACKGROUND_BUILD | FEAT_BUILD | ITEM,
     "choiceDefinitions": CLASS_BUILD | RACE_BUILD | BACKGROUND_BUILD | FEAT_BUILD | ITEM,
-    "configuration": frozenset({"abilities", "inventory"}),
+    "configuration": frozenset(),
     "creatures": frozenset({"attacks", "defenses", "resources"}),
     "customActions": ACTION,
     "customDefenseAdjustments": frozenset({"ac", "saves", "defenses"}),
@@ -220,7 +223,9 @@ MODIFIER_PATTERN_SCOPES = {
     "proficiency:calligraphers-supplies": frozenset({"skills"}),
     "set-base:darkvision": frozenset({"senses"}),
     "set:innate-speed-walking": frozenset({"speeds"}),
-    "set:subclass": CLASS_BUILD,
+    # ``set:subclass`` is a redundant selection marker. The explicit
+    # ``subclassDefinition`` and its level-gated features are authoritative.
+    "set:subclass": frozenset(),
 }
 
 

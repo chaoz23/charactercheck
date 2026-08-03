@@ -48,11 +48,11 @@ class TestSourceModifierScopeRegistry(unittest.TestCase):
     def test_registry_fingerprint_is_reviewed_and_pinned(self):
         self.assertEqual(
             source_field_registry.REGISTRY_FINGERPRINT,
-            "sha256:2eafad340d9a34d7a091d085c057ef9dc85375d524c65f8f6621b59fbe1c88d7",
+            "sha256:7701df04ec8db8d6b5f21fed7b51e7c88f5250358416a404e73b0a147b5c2d26",
         )
         self.assertEqual(
             source.SOURCE_SCHEMA_FINGERPRINT,
-            "sha256:06a73a0cf1a270c2cb7c3a4fa4da1f743db3a2a28d1199afa9e21d993b36c6c1",
+            "sha256:52d8ecdd0b40f53660b621419aa5da0ffd5b6d4032b97b352a5d358635985b55",
         )
 
     def test_source_family_catalog_matches_engine_catalog(self):
@@ -95,7 +95,7 @@ class TestHandlerCatalog(unittest.TestCase):
         self.assertEqual(len(registry.HANDLER_BY_PATTERN), len(patterns))
 
     def test_every_handler_has_complete_machine_routable_metadata(self):
-        allowed_modes = {"apply", "pass_through"}
+        allowed_modes = {"apply", "pass_through", "structural"}
         known_families = set(engine.FAMILY_CATALOG)
 
         for spec in (*registry.HANDLERS, registry.LANGUAGE_HANDLER):
@@ -103,11 +103,18 @@ class TestHandlerCatalog(unittest.TestCase):
                 self.assertTrue(spec.handler_id)
                 self.assertTrue(spec.type_name)
                 self.assertTrue(spec.subtype)
-                self.assertTrue(spec.affects)
+                if spec.mode == "structural":
+                    self.assertEqual(spec.affects, ())
+                else:
+                    self.assertTrue(spec.affects)
                 self.assertLessEqual(set(spec.affects), known_families)
                 self.assertIn(spec.mode, allowed_modes)
                 self.assertIsInstance(spec.requires_number, bool)
+                self.assertIsInstance(spec.accepts_stat_id, bool)
                 self.assertIsInstance(spec.restrictions_supported, bool)
+                self.assertIsInstance(spec.restriction_codes, tuple)
+                if spec.restrictions_supported:
+                    self.assertTrue(spec.restriction_codes)
                 self.assertEqual(spec.rules_profiles,
                                  (source.RULES_PROFILE,))
 
