@@ -1,11 +1,9 @@
 # Migration notes
 
-## 0.7.0 release candidate after 0.6.2
+## 0.7.0 after 0.6.2
 
-Until 0.7.0 publication is independently verified, PyPI installs the
-historical 0.6.2 artifact. The changes below are prepared under version 0.7.0;
-source metadata is not proof that its artifact or registry descriptor has been
-published. Use schema names/versions and feature detection.
+The changes below ship in 0.7.0. Pin the package version, verify the public
+artifact, and use schema names/versions and feature detection.
 
 ### Report schema v2 mechanics changes
 

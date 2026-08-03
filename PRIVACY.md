@@ -1,10 +1,8 @@
 # Privacy
 
-> **Unreleased contract.** These protections describe the post-0.6.2 source
-> checkout. PyPI still exposes the historical 0.6.2 artifact, which does not
-> implement this privacy contract; active historical MCP Registry entries have
-> unpinned runtime arguments that can resolve to it. No newly versioned
-> remediation has been published.
+> **Release contract.** These protections apply to CharacterCheck 0.7.0.
+> Historical 0.6.x artifacts do not implement this privacy contract; pin and
+> verify 0.7.0 when relying on it.
 
 CharacterCheck is currently local, read-only software. This repository does not
 operate a hosted service, retain server-side character data, or ship telemetry.

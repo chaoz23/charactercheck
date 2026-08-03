@@ -5,11 +5,9 @@ character-sheet fields. It is not complete rules validation, encounter/world
 state, session authority, or proof that an action is legal. No mutation tools
 are exposed.
 
-> **Unreleased contract.** This file describes the post-0.6.2 source checkout,
-> not the historical package currently served by PyPI. Active historical MCP
-> Registry entries have unpinned runtime arguments that can resolve to that
-> package. Until a newly versioned remediation is published, run this checkout
-> directly and do not infer these safeguards from a reported `0.6.2` version.
+> **0.7.0 contract.** Historical 0.6.x packages predate these safeguards. Pin
+> and verify 0.7.0, then inspect the trust-bearing fields rather than treating
+> the version alone as proof that a derived value is supported.
 
 ## Cold start
 

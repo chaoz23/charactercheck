@@ -1,18 +1,17 @@
 # Support matrix
 
-This matrix describes the **unreleased source contract after 0.6.2**. It is a
-coverage statement, not a claim of rules completeness. PyPI's current 0.6.2
-artifact predates these changes even though this checkout temporarily retains
-the same version string.
+This matrix describes the **0.7.0 release contract**. It is a coverage
+statement, not a claim of rules completeness. Historical 0.6.x artifacts
+predate these changes.
 
 | Distribution | Status | Contract |
 |---|---|---|
-| Source checkout containing this file | Unreleased; under review | The safety, privacy, snapshot, canonical-assessment, and MCP contract below |
-| `pip install charactercheck` | Published historical 0.6.2 | Earlier behavior; do not assume the source contract below |
-| `server.json` | DO-NOT-PUBLISH historical descriptor | Intentionally pins `charactercheck==0.6.2`; replace it only as part of an authorized, newly versioned package/manifest release |
-| Active MCP Registry entries | Historical and not remediated | Published runtime arguments are unpinned and can resolve to PyPI 0.6.2; deprecate/update them through the registry owner account |
+| Source checkout at tag `v0.7.0` | Released | The safety, privacy, snapshot, canonical-assessment, and MCP contract below |
+| `pip install charactercheck==0.7.0` | Released | Exact 0.7.0 package contract; verify artifact provenance and field trust |
+| `server.json` | Released descriptor | Pins the MCP runtime to `charactercheck==0.7.0` |
+| MCP Registry `io.github.chaoz23/charactercheck` 0.7.0 | Released descriptor | Resolves the exact PyPI 0.7.0 package through `uvx` |
 
-| Area | Unreleased source status | Important boundary |
+| Area | 0.7.0 status | Important boundary |
 |---|---|---|
 | Public D&D Beyond character retrieval | Supported | Exact public URL/ID only; no credentials |
 | Saved character-service JSON | Local CLI/library only | Direct regular files only; bounded and validated |
