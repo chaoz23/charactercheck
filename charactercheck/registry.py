@@ -26,6 +26,15 @@ EQUIPMENT_PROFICIENCIES = (
     "light-armor", "medium-armor", "heavy-armor", "shields",
     "simple-weapons", "martial-weapons",
 )
+TOOL_PROFICIENCIES = (
+    "alchemists-supplies", "brewers-supplies", "calligraphers-supplies",
+    "carpenters-tools", "cartographers-tools", "cobblers-tools",
+    "cooks-utensils", "disguise-kit", "forgery-kit", "glassblowers-tools",
+    "herbalism-kit", "jewelers-tools", "leatherworkers-tools",
+    "masons-tools", "navigators-tools", "painters-supplies", "poisoners-kit",
+    "potters-tools", "smiths-tools", "thieves-tools", "tinkers-tools",
+    "weavers-tools", "woodcarvers-tools",
+)
 
 
 @dataclass(frozen=True)
@@ -62,7 +71,8 @@ for skill in SKILLS:
                           ["skills"]))
     HANDLERS.append(_spec(f"skill.half.{skill}", "half-proficiency", skill,
                           ["skills"]))
-for proficiency in (*SKILLS, *SAVES, *EQUIPMENT_PROFICIENCIES):
+for proficiency in (*SKILLS, *SAVES, *EQUIPMENT_PROFICIENCIES,
+                    *TOOL_PROFICIENCIES):
     HANDLERS.append(_spec(f"proficiency.{proficiency}", "proficiency",
                           proficiency, ["skills", "saves", "attacks",
                                         "weapons"]))
@@ -422,6 +432,37 @@ def _modifier_signature(modifier):
                       default=str)
 
 
+def _selected_choice_evidence(character, bucket, modifier):
+    """Return minimal evidence that a builder-choice modifier is selected.
+
+    DDB choice modifiers can retain ``isGranted: false`` even while selected.
+    The stable join observed in controlled differentials is choice id
+    ``2-<modifier id>`` plus a non-null optionValue. Component identifiers,
+    when both sides provide them, must also agree.
+    """
+    modifier_id = modifier.get("id")
+    if modifier_id is None:
+        return None
+    wanted = f"2-{modifier_id}"
+    for choice in (character.get("choices") or {}).get(bucket) or []:
+        if str(choice.get("id")) != wanted or choice.get("optionValue") is None:
+            continue
+        if (choice.get("componentId") is not None
+                and modifier.get("componentId") is not None
+                and choice.get("componentId") != modifier.get("componentId")):
+            continue
+        if (choice.get("componentTypeId") is not None
+                and modifier.get("componentTypeId") is not None
+                and choice.get("componentTypeId") != modifier.get("componentTypeId")):
+            continue
+        return {
+            "kind": "selected_builder_choice",
+            "choice_id": wanted,
+            "option_selected": True,
+        }
+    return None
+
+
 def classify_modifiers(character):
     """Return ``ledger`` and the only modifiers arithmetic may consume."""
     inventory_activation = _inventory_activation(character)
@@ -489,10 +530,14 @@ def classify_modifiers(character):
             "activation_evidence": (item or {}).get("activation_evidence"),
         }
         component_id = modifier.get("componentId")
-        if modifier.get("isGranted") is False:
+        choice_evidence = _selected_choice_evidence(
+            character, bucket, modifier)
+        if choice_evidence:
+            record["activation_evidence"] = choice_evidence
+        if modifier.get("isGranted") is False and not choice_evidence:
             record.update(state="inactive",
-                          reason="granting evidence is explicitly false")
-        elif modifier.get("isGranted") is not True:
+                          reason="no selected builder-choice evidence")
+        elif modifier.get("isGranted") is not True and not choice_evidence:
             record.update(state="unsupported",
                           reason="granting evidence is missing or malformed")
         elif bucket not in SUPPORTED_MODIFIER_BUCKETS:

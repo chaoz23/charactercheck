@@ -505,9 +505,8 @@ def build(d, *, _privacy_filtered=False):
 
     worn = [i for i in body if i.get("equipped")]
     if not worn and body:
-        worn = sorted(body, key=acof, reverse=True)[:1]
         _lint(W, "armor_not_equipped",
-              "no armor flagged equipped — best carried armor assumed; confirm worn kit",
+              "armor is carried but none is flagged equipped — using unarmored AC",
               ask="Which armour are you actually wearing right now?",
               affects=["ac"])
     if len([i for i in body if i.get("equipped")]) > 1:
@@ -574,8 +573,11 @@ def build(d, *, _privacy_filtered=False):
               ask="What armor class should the table use?", affects=["ac"],
               state="invalid")
 
-    # ---- weapons (carried only), masteries from properties
-    weapons, masteries, active_masteries = [], set(), set()
+    # ---- inventory weapons and currently available attacks. A weapon's Sap,
+    # Push, etc. property is not evidence that the character learned that
+    # mastery. DDB's sheet also synthesizes Unarmed Strike rather than carrying
+    # it in the public actions collection.
+    weapons, mastery_properties = [], set()
     for it in d.get("inventory", []):
         de = it.get("definition") or {}
         dmg = de.get("damage") or {}
@@ -589,9 +591,7 @@ def build(d, *, _privacy_filtered=False):
         props = {p.get("name") for p in de.get("properties") or []
                  if p.get("name") != "unclassified"}
         ms = props & MASTERIES
-        masteries |= ms
-        if it.get("equipped"):
-            active_masteries |= ms
+        mastery_properties |= ms
         lane = "ranged" if de.get("attackType") == 2 else "melee"
         use = (max(am["str"], am["dex"]) if "Finesse" in props
                else am["dex"] if lane == "ranged" else am["str"])
@@ -611,8 +611,23 @@ def build(d, *, _privacy_filtered=False):
             "offhand_label": bool(re.search(r"off.?hand", cname.get(str(it["id"]), ""), re.I)),
             "two_handed": "Two-Handed" in props, "light": "Light" in props,
             "loading": "Loading" in props})
-    W.update(weapons=weapons, masteries=sorted(masteries),
-             active_masteries=sorted(active_masteries))
+    unarmed = {
+        "name": "Unarmed Strike", "base_name": "Unarmed Strike",
+        "lane": "melee", "equipped": True, "designated": False,
+        "attack_bonus": am["str"] + pb,
+        "attack_provenance": f"STR {am['str']:+d} + PB {pb}",
+        "damage": str(max(0, 1 + am["str"])),
+        "damage_type": "Bludgeoning", "properties": [], "mastery": [],
+        "offhand_label": False, "two_handed": False, "light": False,
+        "loading": False, "source": "srd-5.2.1-partial",
+    }
+    active_attacks = [weapon for weapon in weapons if weapon["equipped"]]
+    active_attacks.append(unarmed)
+    W.update(
+        weapons=weapons,
+        active_attacks=active_attacks,
+        weapon_mastery_properties=sorted(mastery_properties),
+        masteries=[], active_masteries=[])
 
     # ---- HP (per-level bonuses scaled by granting class where linkable)
     hp_per_lvl = sum((m.get("value") or 0)
@@ -642,6 +657,21 @@ def build(d, *, _privacy_filtered=False):
               "hit-point values fall outside the supported non-negative range",
               ask="What are your hit-point maximum, current HP, and temporary HP?",
               affects=["hp"], state="invalid")
+    death_source = d.get("deathSaves") or {}
+    death_successes = death_source.get("successCount") or 0
+    death_failures = death_source.get("failCount") or 0
+    W["death_saves"] = {
+        "successes": death_successes,
+        "failures": death_failures,
+        "active": W["hp"] <= 0,
+        "latent": W["hp"] > 0 and bool(death_successes or death_failures),
+        "source_is_stabilized": death_source.get("isStabilized"),
+        "rules_imply_stable": death_successes >= 3,
+    }
+    W["exhaustion"] = next(
+        (condition.get("level") or 0
+         for condition in d.get("conditions", [])
+         if condition.get("id") == 4), 0)
 
     # ---- spellcasting
     spell = None
@@ -652,44 +682,123 @@ def build(d, *, _privacy_filtered=False):
                      "attack_bonus": pb + am[ABIL[aid]],
                      "provenance": f"8 + PB {pb} + {ABIL[aid].upper()} {am[ABIL[aid]]:+d}"}
             break
-    entries = []
-    for src in (d.get("spells") or {}).values():
-        entries += src or []
-    for cs in d.get("classSpells") or []:
-        entries += cs.get("spells") or []
+    sourced_entries = []
+    for source_kind, source_entries in (d.get("spells") or {}).items():
+        sourced_entries.extend((entry, source_kind, "granted")
+                               for entry in (source_entries or []))
+    class_list_modes = {
+        "spells": "class_list", "alwaysPreparedSpells": "always_prepared",
+        "alwaysKnownSpells": "always_known", "cantrips": "cantrip",
+    }
+    for class_block in d.get("classSpells") or []:
+        for list_name, list_mode in class_list_modes.items():
+            sourced_entries.extend(
+                (entry, "class", list_mode)
+                for entry in (class_block.get(list_name) or []))
+    entries = [entry for entry, _, _ in sourced_entries]
     cantrips = sorted({(e.get("definition") or {}).get("name") for e in entries
                        if (e.get("definition") or {}).get("level") == 0} - {None})
     prepared = sorted({(e.get("definition") or {}).get("name") for e in entries
                        if ((e.get("definition") or {}).get("level") or 0) > 0
                        and (e.get("prepared") or e.get("alwaysPrepared"))} - {None})
-    slots = {s["level"]: s.get("available", 0) for s in d.get("spellSlots", []) if s.get("available")}
-    slots_cur = {s["level"]: s.get("available", 0) - s.get("used", 0)
-                 for s in d.get("spellSlots", []) if s.get("available")}
+    profiles = {}
+    for entry, source_kind, list_mode in sourced_entries:
+        definition = entry.get("definition") or {}
+        name, spell_level = definition.get("name"), definition.get("level")
+        if not name or not isinstance(spell_level, int):
+            continue
+        key = (name, source_kind)
+        profile = profiles.setdefault(key, {
+            "name": name, "level": spell_level, "source": source_kind,
+            "availability": set(), "cast_modes": set(),
+        })
+        if list_mode == "always_prepared" or entry.get("alwaysPrepared"):
+            profile["availability"].add("always_prepared")
+            if spell_level > 0:
+                prepared.append(name)
+        elif list_mode == "always_known":
+            profile["availability"].add("always_known")
+        elif entry.get("prepared"):
+            profile["availability"].add("prepared")
+        elif spell_level == 0:
+            profile["availability"].add("known_cantrip")
+        else:
+            profile["availability"].add("granted")
+        limited = entry.get("limitedUse") or {}
+        if limited:
+            profile["cast_modes"].add("limited_free")
+            profile["limited_use"] = {
+                "max": limited.get("maxUses"),
+                "used": limited.get("numberUsed") or 0,
+                "reset_type": limited.get("resetType"),
+            }
+        if entry.get("usesSpellSlot") is True:
+            profile["cast_modes"].add("spell_slot")
+        if spell_level == 0 and not limited:
+            profile["cast_modes"].add("at_will")
+    spell_profiles = []
+    for profile in profiles.values():
+        profile["availability"] = sorted(profile["availability"])
+        profile["cast_modes"] = sorted(profile["cast_modes"])
+        spell_profiles.append(profile)
+    spell_profiles.sort(key=lambda row: (row["level"], row["name"], row["source"]))
+    prepared = sorted(set(prepared))
+    classes = d.get("classes") or []
+    expected = expected_slots(classes) or []
+    # Current DDB v5 payloads use spellSlots[].used as mutable state, but the
+    # observed `available` field can remain zero and is not a reliable maximum.
+    # Derive ordinary slot maxima from the pinned SRD progression; retain the
+    # source field only as a compatibility fallback for an unsupported class.
+    source_slots = {s["level"]: s for s in d.get("spellSlots", [])}
+    slots = {level: maximum for level, maximum in enumerate(expected, 1)
+             if maximum}
+    if not slots:
+        slots = {level: row.get("available", 0)
+                 for level, row in source_slots.items()
+                 if row.get("available", 0) > 0}
+    slots_cur = {
+        level: maximum - (source_slots.get(level, {}).get("used") or 0)
+        for level, maximum in slots.items()
+    }
     for s in d.get("pactMagic", []) or []:
         if s.get("available"):
             slots[f"pact{s['level']}"] = s["available"]
             slots_cur[f"pact{s['level']}"] = s["available"] - s.get("used", 0)
     W.update(spell=spell, cantrips=cantrips, prepared=prepared,
+             spell_profiles=spell_profiles,
              slots=slots, slots_cur=slots_cur)
-    slot_rows = _slot_rows(d, "spellSlots") + _slot_rows(d, "pactMagic")
-    if any((row.get("available") or 0) < 0
-           or (row.get("used") or 0) < 0
-           or (row.get("used") or 0) > (row.get("available") or 0)
-           for row in slot_rows):
+    ordinary_invalid = any(
+        (row.get("used") or 0) < 0
+        or (row["level"] in slots
+            and (row.get("used") or 0) > slots[row["level"]])
+        for row in _slot_rows(d, "spellSlots"))
+    pact_invalid = any(
+        (row.get("available") or 0) < 0 or (row.get("used") or 0) < 0
+        or (row.get("used") or 0) > (row.get("available") or 0)
+        for row in _slot_rows(d, "pactMagic"))
+    if ordinary_invalid or pact_invalid:
         _lint(W, "spell_slots_out_of_range",
               "one or more spell-slot counters are negative or exceed their maximum",
               ask="How many spell slots do you have in total, and how many are left?",
               affects=["spell_slots"], state="invalid")
+    if not slots and any((row.get("used") or 0) > 0
+                         for row in _slot_rows(d, "spellSlots")):
+        _lint(W, "spell_slot_maximum_unresolved",
+              "spent spell slots are present but this rules profile cannot "
+              "derive their maximum",
+              ask="How many spell slots do you have in total, and how many are left?",
+              affects=["spell_slots"])
     # ---- partial slot consistency check against the declared SRD table
     # Zero maxima and impossible use counts are source-consistency findings;
     # this table is not a complete edition-aware spellcasting validator.
-    classes = d.get("classes") or []
-    exp = expected_slots(classes)
+    exp = expected
 
     def _slot_gap(rows, label, expectation):
         """Diagnose a slot block. Two failures hide behind one symptom.
 
-        `available` is the maximum and `used` is what has been spent, so:
+        Pact-magic `available` remains source-declared. Ordinary spell-slot
+        maxima are derived above because DDB's same-named field is not a
+        reliable maximum in current public payloads.
 
           * maxima present  -> fine, expended or not
           * no maxima, nothing used -> the payload never populated them
@@ -723,8 +832,6 @@ def build(d, *, _privacy_filtered=False):
                   f"used — a data gap, not an expended caster.",
                   ask=f"Your sheet shows no spell slots, but a caster of your level should have {shape}. How many do you have?",
                   affects=["spell_slots"])
-
-    _slot_gap(_slot_rows(d, "spellSlots"), "spell slots", exp)
 
     if any(((c.get("definition") or {}).get("name") or "").lower() in PACT_CASTERS
            for c in classes):
@@ -871,7 +978,7 @@ def _projection_meta(loaded=None, character=None, source_coverage=None):
     )
     return {
         "report_schema": "charactercheck.derived-character",
-        "report_schema_version": 1,
+        "report_schema_version": 2,
         "engine_version": __version__,
         "rules_profile": source.RULES_PROFILE,
         "adapter_registry_fingerprint": ddb_registry.REGISTRY_FINGERPRINT,
@@ -1140,13 +1247,18 @@ def derive_data(d, *, meta=None, source_coverage=None):
             "ac": {"value": W["ac"], "provenance": W["ac_prov"]},
             "initiative": {"bonus": W["init"], "provenance": W["init_prov"]},
             "hp": {"current": W["hp"], "max": W["maxhp"], "provenance": W["hp_prov"]},
+            "death_saves": W["death_saves"],
+            "exhaustion": W["exhaustion"],
             "weapons": W["weapons"],
-            "masteries_on_weapons": W["masteries"],
+            "active_attacks": W["active_attacks"],
+            "masteries_known": W["masteries"],
+            "mastery_properties_on_weapons": W["weapon_mastery_properties"],
             "stance": _stance_data(d, W)},
         "spellcasting": ({"ability": W["spell"]["ability"], "dc": W["spell"]["dc"],
                           "attack_bonus": W["spell"]["attack_bonus"],
                           "provenance": W["spell"]["provenance"],
                           "cantrips": W["cantrips"], "prepared": W["prepared"],
+                          "spell_profiles": W["spell_profiles"],
                           "slots_max": W["slots"], "slots_current": W["slots_cur"]}
                         if W["spell"] else None),
         "resources": W["resources"],

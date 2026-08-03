@@ -668,6 +668,7 @@ def validate_character(character):
                 "spellSlots", "pactMagic", "customItems"):
         _optional_list(character, key, "character")
     for key in ("race", "background", "spells", "actions", "deathSaves",
+                "choices",
                 "currencies", "traits", "notes", "preferences"):
         _optional_dict(character, key, "character")
     if "baseHitPoints" not in character or not _integer(character.get("baseHitPoints")):
@@ -689,6 +690,27 @@ def validate_character(character):
                     and (not isinstance(value[key], (int, str))
                          or isinstance(value[key], bool))):
                 raise errors.invalid_character(f"characterValues[{idx}].{key} has an invalid type")
+
+    for bucket, records in (character.get("choices") or {}).items():
+        if bucket in {"choiceDefinitions", "definitionKeyNameMap"}:
+            expected = list if bucket == "choiceDefinitions" else dict
+            if records is not None and not isinstance(records, expected):
+                raise errors.invalid_character(
+                    f"choices.{bucket} has an invalid container type")
+            continue
+        if records is not None and not isinstance(records, list):
+            raise errors.invalid_character(
+                f"choices.{bucket} must be an array or null")
+        for idx, record in enumerate(records or []):
+            if not isinstance(record, dict):
+                raise errors.invalid_character(
+                    f"choices.{bucket}[{idx}] must be an object")
+            for key in _CHOICE_KEYS:
+                value = record.get(key)
+                if value is not None and (not isinstance(value, (int, str))
+                                          or isinstance(value, bool)):
+                    raise errors.invalid_character(
+                        f"choices.{bucket}[{idx}].{key} has an invalid type")
 
     for stat_key in ("overrideStats", "bonusStats"):
         seen = set()
@@ -741,24 +763,29 @@ def validate_character(character):
                     raise errors.invalid_character(
                         f"{bucket_name}.{bucket}[{idx}].limitedUse."
                         "statModifierUsesId must be in 1..6 or null")
-                for key in ("prepared", "alwaysPrepared"):
+                for key in ("prepared", "alwaysPrepared", "usesSpellSlot"):
                     _optional_bool(entry, key,
                                    f"{bucket_name}.{bucket}[{idx}]")
 
     for idx, block in enumerate(character.get("classSpells") or []):
         if not isinstance(block, dict):
             raise errors.invalid_character(f"classSpells[{idx}] must be an object")
-        entries = _optional_list(block, "spells", f"classSpells[{idx}]")
-        for sidx, entry in enumerate(entries):
-            if not isinstance(entry, dict):
-                raise errors.invalid_character(f"classSpells[{idx}].spells[{sidx}] must be an object")
-            definition = entry.get("definition")
-            if definition is not None:
-                _validate_definition(definition,
-                                     f"classSpells[{idx}].spells[{sidx}].definition")
-            for key in ("prepared", "alwaysPrepared"):
-                _optional_bool(entry, key,
-                               f"classSpells[{idx}].spells[{sidx}]")
+        for list_name in ("spells", "alwaysPreparedSpells",
+                          "alwaysKnownSpells", "cantrips"):
+            entries = _optional_list(block, list_name, f"classSpells[{idx}]")
+            for sidx, entry in enumerate(entries):
+                if not isinstance(entry, dict):
+                    raise errors.invalid_character(
+                        f"classSpells[{idx}].{list_name}[{sidx}] must be an object")
+                definition = entry.get("definition")
+                if definition is not None:
+                    _validate_definition(
+                        definition,
+                        f"classSpells[{idx}].{list_name}[{sidx}].definition")
+                for key in ("prepared", "alwaysPrepared", "usesSpellSlot"):
+                    _optional_bool(
+                        entry, key,
+                        f"classSpells[{idx}].{list_name}[{sidx}]")
 
     for slot_key in ("spellSlots", "pactMagic"):
         seen_slot_levels = set()
@@ -819,6 +846,7 @@ def validate_character(character):
     death = character.get("deathSaves") or {}
     for key in ("successCount", "failCount"):
         _optional_bounded_integer(death, key, "deathSaves")
+    _optional_bool(death, "isStabilized", "deathSaves")
 
     for key, value in (character.get("currencies") or {}).items():
         if value is not None and not _integer(value):
@@ -1079,7 +1107,7 @@ _MECHANICAL_TOP_LEVEL = {
     "overrideHitPoints", "removedHitPoints", "temporaryHitPoints",
     "currentXp", "alignmentId", "inspiration", "conditions", "feats",
     "spellSlots", "pactMagic", "currencies", "deathSaves", "customItems",
-    "preferences",
+    "preferences", "choices",
 }
 _SAFE_PREFERENCE_KEYS = {
     "enableOptionalClassFeatures", "enableOptionalOrigins", "encumbranceType",
@@ -1112,8 +1140,13 @@ _DEFINITION_KEYS = {
     "properties", "classFeatures", "_semanticGaps",
 }
 _MODIFIER_KEYS = {
-    "type", "subType", "restriction", "value", "statId", "componentId",
-    "isGranted",
+    "id", "type", "subType", "restriction", "value", "statId",
+    "componentId", "componentTypeId", "isGranted",
+}
+
+_CHOICE_KEYS = {
+    "id", "componentId", "componentTypeId", "optionValue", "parentChoiceId",
+    "type", "subType",
 }
 _KNOWN_CHARACTER_VALUE_TYPES = {
     1, 2, 3, 8, 9, 24, 25, 26, 27, 28, 29, 39, 40, 41,
@@ -1417,6 +1450,33 @@ def _sanitize_buckets(value, sanitizer, coverage, path):
     return out
 
 
+def _sanitize_choices(value, coverage):
+    """Retain selected-choice join rows, not inactive option catalogs.
+
+    Controlled UI differentials showed that active selection changes live in
+    the source-bucket rows (`2-<modifier id>` and `optionValue`). The adjacent
+    definition/name collections describe the builder's option universe and do
+    not change when the selected option changes.
+    """
+    out = {}
+    for bucket, entries in value.items():
+        if bucket in {"choiceDefinitions", "definitionKeyNameMap"}:
+            continue
+        safe_bucket = bucket if bucket in _SNAPSHOT_BUCKETS else "_unclassified"
+        if safe_bucket != bucket or (entries is not None
+                                     and not isinstance(entries, list)):
+            coverage["unclassified_nested_omitted"] = True
+            continue
+        if entries is None:
+            out[safe_bucket] = None
+            continue
+        out[safe_bucket] = [
+            _closed_object(row, _CHOICE_KEYS, coverage, path="choices[]")
+            for row in entries if isinstance(row, dict)
+        ]
+    return out
+
+
 def _sanitize_character_value(value, coverage, path):
     out = _closed_object(
         value, {"typeId", "valueId", "value"}, coverage, path=path)
@@ -1461,7 +1521,8 @@ def _sanitize_character_value(value, coverage, path):
 
 def _sanitize_spell_entry(value, coverage, path):
     out = _closed_object(
-        value, {"definition", "prepared", "alwaysPrepared", "limitedUse"},
+        value, {"definition", "prepared", "alwaysPrepared", "usesSpellSlot",
+                "limitedUse"},
         coverage, path=path)
     if isinstance(out.get("definition"), dict):
         out["definition"] = _sanitize_definition(
@@ -1470,7 +1531,8 @@ def _sanitize_spell_entry(value, coverage, path):
         out["limitedUse"] = _closed_object(
             out["limitedUse"],
             {"maxUses", "statModifierUsesId", "numberUsed",
-             "useProficiencyBonus"}, coverage, path=path + ".limitedUse")
+             "useProficiencyBonus", "resetType"}, coverage,
+            path=path + ".limitedUse")
     return out
 
 
@@ -1512,6 +1574,8 @@ def _privacy_filter_with_coverage(character, *, include_persona=False):
     if isinstance(value.get("modifiers"), dict):
         value["modifiers"] = _sanitize_buckets(
             value["modifiers"], _sanitize_modifier, coverage, "modifiers")
+    if isinstance(value.get("choices"), dict):
+        value["choices"] = _sanitize_choices(value["choices"], coverage)
 
     filtered_values = []
     for record in value.get("characterValues") or []:
@@ -1568,13 +1632,18 @@ def _privacy_filter_with_coverage(character, *, include_persona=False):
         for block in value["classSpells"]:
             if not isinstance(block, dict):
                 continue
+            list_names = {"spells", "alwaysPreparedSpells",
+                          "alwaysKnownSpells", "cantrips"}
             clean = _closed_object(
-                block, {"spells"}, coverage, path="classSpells[]")
-            if isinstance(clean.get("spells"), list):
-                clean["spells"] = [
-                    _sanitize_spell_entry(row, coverage, "classSpells[].spells[]")
-                    for row in clean["spells"] if isinstance(row, dict)
-                ]
+                block, list_names, coverage, path="classSpells[]")
+            for list_name in list_names:
+                if isinstance(clean.get(list_name), list):
+                    clean[list_name] = [
+                        _sanitize_spell_entry(
+                            row, coverage,
+                            f"classSpells[].{list_name}[]")
+                        for row in clean[list_name] if isinstance(row, dict)
+                    ]
             blocks.append(clean)
         value["classSpells"] = blocks
 
@@ -1599,7 +1668,8 @@ def _privacy_filter_with_coverage(character, *, include_persona=False):
             ]
     if isinstance(value.get("deathSaves"), dict):
         value["deathSaves"] = _closed_object(
-            value["deathSaves"], {"successCount", "failCount"}, coverage,
+            value["deathSaves"],
+            {"successCount", "failCount", "isStabilized"}, coverage,
             path="deathSaves")
     if isinstance(value.get("currencies"), dict):
         value["currencies"] = _closed_object(

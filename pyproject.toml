@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "charactercheck"
-version = "0.6.2"
+version = "0.7.0"
 description = "Experimental read-only derivation of selected D&D Beyond character fields with provenance and findings."
 readme = "README.md"
 license = "MIT"

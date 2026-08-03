@@ -48,11 +48,11 @@ class TestSourceModifierScopeRegistry(unittest.TestCase):
     def test_registry_fingerprint_is_reviewed_and_pinned(self):
         self.assertEqual(
             source_field_registry.REGISTRY_FINGERPRINT,
-            "sha256:0409d146ff2fffe4f66347693456ad0bf64411d6910a5128d81fa0922efd37f4",
+            "sha256:2eafad340d9a34d7a091d085c057ef9dc85375d524c65f8f6621b59fbe1c88d7",
         )
         self.assertEqual(
             source.SOURCE_SCHEMA_FINGERPRINT,
-            "sha256:7d3db435f5eb6f5f697966848ce1c9f419d3582e88c41e4bd9eb95d4262feebc",
+            "sha256:06a73a0cf1a270c2cb7c3a4fa4da1f743db3a2a28d1199afa9e21d993b36c6c1",
         )
 
     def test_source_family_catalog_matches_engine_catalog(self):
@@ -261,6 +261,64 @@ class TestFailClosedModifierClassification(unittest.TestCase):
                 "item-semantic:weapon_property",
             },
         )
+
+    def test_selected_builder_choice_activates_is_granted_false_modifier(self):
+        character = fixture_character()
+        add_modifier(character, {
+            "id": 7115,
+            "type": "proficiency",
+            "subType": "history",
+            "isGranted": False,
+        }, "background")
+        character["choices"] = {
+            "background": [{"id": "2-7115", "optionValue": 6111}],
+        }
+
+        filtered = source.privacy_filter(character)
+        self.assertEqual(filtered["choices"]["background"], [
+            {"id": "2-7115", "optionValue": 6111},
+        ])
+        classified = registry.classify_modifiers(filtered)
+        self.assertEqual(classified["ledger"][0]["state"], "applied")
+        self.assertEqual(
+            classified["ledger"][0]["activation_evidence"]["kind"],
+            "selected_builder_choice",
+        )
+        self.assertEqual(engine.build(filtered)["skill"]("history")[1],
+                         "proficient")
+
+    def test_selected_standard_tool_proficiency_is_applied(self):
+        character = fixture_character()
+        add_modifier(character, {
+            "id": 8801, "type": "proficiency",
+            "subType": "calligraphers-supplies", "isGranted": False,
+        }, "background")
+        character["choices"] = {
+            "background": [{"id": "2-8801", "optionValue": 9901}],
+        }
+        workspace = engine.build(source.privacy_filter(character))
+        self.assertIn("calligraphers-supplies", workspace["profs"])
+
+    def test_builder_choice_requires_exact_modifier_and_component_match(self):
+        character = fixture_character()
+        add_modifier(character, {
+            "id": 7115,
+            "type": "language",
+            "subType": "goblin",
+            "componentId": 42,
+            "componentTypeId": 77,
+            "isGranted": False,
+        }, "race")
+        character["choices"] = {
+            "race": [{
+                "id": "2-7115", "optionValue": 9001,
+                "componentId": 43, "componentTypeId": 77,
+            }],
+        }
+
+        classified = registry.classify_modifiers(character)
+        self.assertEqual(classified["ledger"][0]["state"], "inactive")
+        self.assertEqual(classified["applied"], [])
 
     def test_future_level_feature_modifier_is_inactive(self):
         baseline = fixture_character()

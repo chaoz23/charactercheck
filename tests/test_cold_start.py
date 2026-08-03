@@ -422,23 +422,31 @@ class TestSpellLintsAgainstSyntheticCharacters(unittest.TestCase):
         mutate(character)
         return " | ".join(f["message"] for f in engine.derive_data(character)["lint"])
 
-    def test_cleric_three_with_no_slots_is_flagged_as_a_data_gap(self):
-        lint = self._lint(lambda d: d.update(
+    def test_cleric_three_ignores_zero_available_and_derives_maxima(self):
+        character = copy.deepcopy(self.base)
+        character.update(
             spellSlots=[{"level": 1, "available": 0, "used": 0},
-                        {"level": 2, "available": 0, "used": 0}]))
-        self.assertIn("spell slots missing", lint)
-        self.assertIn("caster level 3", lint)
+                        {"level": 2, "available": 0, "used": 0}])
+        spellcasting = engine.derive_data(character)["spellcasting"]
+        self.assertEqual(spellcasting["slots_max"], {1: 4, 2: 2})
+        self.assertEqual(spellcasting["slots_current"], {1: 4, 2: 2})
 
     def test_cleric_three_with_only_cantrips_is_flagged_for_prepared(self):
         def mutate(d):
             d["spells"]["class"] = [d["spells"]["class"][0]]
         self.assertIn("no prepared leveled spells", self._lint(mutate))
 
-    def test_spent_without_maxima_is_flagged_as_inconsistent(self):
+    def test_used_counter_is_checked_against_derived_maximum(self):
         lint = self._lint(lambda d: d.update(
-            spellSlots=[{"level": 1, "available": 0, "used": 3}]))
-        self.assertIn("spell slots inconsistent", lint)
-        self.assertIn("3 spent at L1", lint)
+            spellSlots=[{"level": 1, "available": 0, "used": 5}]))
+        self.assertIn("spell-slot counters", lint)
+
+    def test_zero_available_does_not_erase_valid_used_counter(self):
+        character = copy.deepcopy(self.base)
+        character.update(
+            spellSlots=[{"level": 1, "available": 0, "used": 3}])
+        spellcasting = engine.derive_data(character)["spellcasting"]
+        self.assertEqual(spellcasting["slots_current"][1], 1)
 
     def test_pact_magic_is_diagnosed_separately(self):
         def mutate(d):

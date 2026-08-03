@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import copy
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -34,7 +35,8 @@ class TestTorvald(unittest.TestCase):
         self.assertEqual(sp["dc"], 13)  # 8 + pb2 + wis3
         self.assertEqual(sp["cantrips"], ["Sacred Flame"])
         self.assertEqual(sp["prepared"], ["Bless"])
-        self.assertEqual(sp["slots_current"], {1: 3})
+        self.assertEqual(sp["slots_max"], {1: 4, 2: 2})
+        self.assertEqual(sp["slots_current"], {1: 3, 2: 2})
 
     def test_saves_proficiency(self):
         self.assertTrue(self.r["saves"]["wis"]["proficient"])
@@ -53,8 +55,72 @@ class TestTorvald(unittest.TestCase):
         self.assertIn("weapons", self.r["trust"]["unsupported"])
         self.assertEqual(self.r["lint"], [])
 
-    def test_mastery_from_properties(self):
-        self.assertIn("Sap", self.r["combat"]["masteries_on_weapons"])
+    def test_weapon_property_is_not_claimed_as_learned_mastery(self):
+        self.assertEqual(self.r["combat"]["masteries_known"], [])
+        self.assertIn(
+            "Sap", self.r["combat"]["mastery_properties_on_weapons"])
+
+
+class TestValidatedDDBDifferentials(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        with open(TORVALD, encoding="utf-8") as stream:
+            cls.base = json.load(stream)["data"]
+
+    def test_carried_armor_is_not_worn_and_unarmed_is_active(self):
+        character = copy.deepcopy(self.base)
+        for item in character["inventory"]:
+            item["equipped"] = False
+        report = engine.derive_data(character)
+        expected_ac = 10 + report["abilities"]["dex"]["mod"]
+        self.assertEqual(report["combat"]["ac"]["value"], expected_ac)
+        self.assertEqual(report["combat"]["active_attacks"][0]["name"],
+                         "Unarmed Strike")
+
+    def test_spell_profiles_preserve_source_and_cast_modes(self):
+        character = copy.deepcopy(self.base)
+        longstrider = {"definition": {"name": "Longstrider", "level": 1}}
+        free = copy.deepcopy(longstrider)
+        free["usesSpellSlot"] = False
+        free["limitedUse"] = {"maxUses": 1, "numberUsed": 0,
+                              "resetType": 2}
+        slotted = copy.deepcopy(longstrider)
+        slotted["usesSpellSlot"] = True
+        character["spells"]["race"] = [free, slotted]
+        character["classSpells"] = [{
+            "alwaysPreparedSpells": [{
+                "definition": {"name": "Aid", "level": 2},
+                "usesSpellSlot": True,
+            }],
+        }]
+
+        spellcasting = engine.derive_data(character)["spellcasting"]
+        profiles = {(row["name"], row["source"]): row
+                    for row in spellcasting["spell_profiles"]}
+        self.assertEqual(profiles[("Longstrider", "race")]["cast_modes"],
+                         ["limited_free", "spell_slot"])
+        self.assertIn("Aid", spellcasting["prepared"])
+        self.assertEqual(
+            profiles[("Aid", "class")]["availability"],
+            ["always_prepared"],
+        )
+
+    def test_death_save_counters_can_be_latent_and_stability_is_separate(self):
+        character = copy.deepcopy(self.base)
+        character["deathSaves"] = {
+            "successCount": 3, "failCount": 0, "isStabilized": False,
+        }
+        state = engine.derive_data(character)["combat"]["death_saves"]
+        self.assertFalse(state["active"])
+        self.assertTrue(state["latent"])
+        self.assertFalse(state["source_is_stabilized"])
+        self.assertTrue(state["rules_imply_stable"])
+
+    def test_exhaustion_uses_condition_id_four_only(self):
+        character = copy.deepcopy(self.base)
+        character["conditions"] = [{"id": 99, "level": 5},
+                                   {"id": 4, "level": 2}]
+        self.assertEqual(engine.build(character)["exhaustion"], 2)
 
 
 class TestVexa(unittest.TestCase):
@@ -105,7 +171,10 @@ class TestVexa(unittest.TestCase):
         self.assertEqual(_exit_code(self.r), 2)
 
     def test_pact_slots(self):
-        self.assertEqual(self.r["spellcasting"]["slots_current"], {"pact2": 1})
+        self.assertEqual(
+            self.r["spellcasting"]["slots_current"],
+            {1: 2, "pact2": 1},
+        )
 
 
 class TestQA(unittest.TestCase):

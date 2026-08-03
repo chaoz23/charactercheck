@@ -1,12 +1,31 @@
 # Migration notes
 
-## Unreleased safety foundation after 0.6.2
+## 0.7.0 release candidate after 0.6.2
 
-PyPI currently installs the historical 0.6.2 artifact. The changes below exist
-only in the source checkout under review. That checkout also temporarily
-reports `0.6.2`, so do not select behavior from the version string alone. Use
-schema names/versions and feature detection during review, and require a new
-package version before production adoption or publication.
+Until 0.7.0 publication is independently verified, PyPI installs the
+historical 0.6.2 artifact. The changes below are prepared under version 0.7.0;
+source metadata is not proof that its artifact or registry descriptor has been
+published. Use schema names/versions and feature detection.
+
+### Report schema v2 mechanics changes
+
+- `combat.weapons` remains carried inventory. Use `combat.active_attacks` for
+  attacks currently available from equipped weapons plus Unarmed Strike.
+- `combat.masteries_on_weapons` is replaced by `masteries_known` and
+  `mastery_properties_on_weapons`; possession of a Sap weapon no longer claims
+  Sap was learned.
+- Unequipped carried armor no longer supplies AC. This can lower a previously
+  overestimated value to the correct unarmored formula.
+- `spellcasting.slots_max` is derived from the pinned SRD progression;
+  `spellSlots[].available` is no longer assumed to be the maximum, while
+  `used` remains mutable source state.
+- `spellcasting.spell_profiles` separates source, availability, and cast mode,
+  including at-will, limited-free, and slot casting. Enriched always-prepared
+  collections are supported, but missing public subclass lists are not
+  inferred.
+- `combat.death_saves` distinguishes active/latent counters and source versus
+  rules-implied stabilization. `combat.exhaustion` uses D&D Beyond condition
+  id 4.
 
 ### Input and privacy
 
