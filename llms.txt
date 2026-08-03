@@ -13,6 +13,7 @@ STATUS:
 START OFFLINE:
   python3 -m charactercheck selftest
   python3 -m charactercheck derive examples/sample-character.json --brief
+  python3 -m charactercheck derive examples/sample-character.json --table-evaluation
 
 INPUT:
   Exact positive numeric ID, exact HTTPS dndbeyond.com/characters/<id>, a
@@ -61,6 +62,12 @@ LIBRARY:
   were omitted; build is not a package export. Never strip coverage or fixed
   _semanticGaps by recomposing a plain character dict.
 
+SHARED RESULT:
+  derive/report --table-evaluation emits deterministic, value-free
+  table.evaluation/1.0. Mutable player-authority fields are out-of-scope
+  advisories; unsupported/unknown/invalid fields fail closed. Output is always
+  self_attested and never grants source, table, encounter, or action authority.
+
 ECOSYSTEM:
   Adapter IDs/names come from a pinned offline DDB config registry; membership
   does not mean mechanics are implemented, and runtime performs no config
@@ -76,6 +83,8 @@ EXIT (command-specific):
   runtime/input failures: 3. Unsupported command-specific flags are structured
   bad_flag exit 2; argparse syntax/usage errors are plain-text exit 2. Never
   treat exit 0 or 2 as autonomous readiness.
+  With --table-evaluation, use the shared exit lane: 0 checked clean, 1 complete
+  with advisories/findings, 2 refused. It is mutually exclusive with --brief.
 
 MCP TOOLS:
   derive, stance, qa, diff, snapshot, seatpack, quiz, report, intake,

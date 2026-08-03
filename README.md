@@ -128,6 +128,7 @@ collection, inventory, modifier, and container-traversal limits.
 |---|---|
 | `derive <ref>` | Selected derived fields, provenance, findings, and trust routing |
 | `derive <ref> --brief` | Deterministic chat-sized summary; still subject to findings |
+| `derive <ref> --table-evaluation` | Value-free, deterministic, self-attested `table.evaluation/1.0` assessment envelope |
 | `stance <ref>` | Envelope containing stance, canonical assessment, trust, fields, and observation metadata |
 | `report <ref>` | Canonical field/trust assessments plus findings and identified feature names |
 | `qa <ref> [--full]` | 100-question **Coverage Inventory** pairing each answer with a closed field state; not a validity score |
@@ -141,6 +142,14 @@ collection, inventory, modifier, and container-traversal limits.
 
 `--pipe` reads refs from standard input. `charactercheck --schema` emits the
 machine-readable CLI contract.
+
+`--table-evaluation` is also accepted by `report`. It projects canonical field
+states and source/policy digests, never character values. Trusted fields count
+as evaluated; unsupported, unknown, invalid, and non-authority confirmation
+states fail closed. Mutable player-authority fields are outside the evaluator's
+scope and become advisories requiring player/session-host reconciliation. The
+envelope is always `self_attested`; it is not proof of source identity,
+freshness, table role, encounter state, or action legality.
 
 ### Question catalog
 
@@ -316,6 +325,12 @@ Exit status is command-specific:
 | `stance`, `qa`, `snapshot`, `quiz`, `seatpack`, `intake` | projection emitted; inspect embedded fields/findings | — | — | structured input, retrieval, validation, or internal failure |
 | `selftest` | smoke test passed | smoke test failed | — | — |
 | `doctor` | all checks passed | — | — | at least one diagnostic check failed |
+
+With explicit `--table-evaluation`, the shared contract's exit codes apply:
+`0` checked clean, `1` complete with advisories/findings, and `2` incomplete,
+unsupported, invalid, or internal error. Native command behavior is unchanged
+when the flag is absent. `--brief` and `--table-evaluation` are mutually
+exclusive.
 
 The CLI rejects every unsupported command/flag combination with structured
 `bad_flag` exit 2; notably `--for-dm` is valid only for `seatpack` and `intake`.

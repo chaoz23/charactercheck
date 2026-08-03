@@ -5,6 +5,7 @@ import secrets
 import sys
 
 from . import derive, engine, errors, qa
+from .table_evaluation import input_digest, project_table_error, project_table_evaluation
 
 
 def _json(value):
@@ -55,6 +56,13 @@ SCHEMA = {
                  "for credentials."),
         "kinds": list(errors.PUBLIC_ERROR_KINDS),
     },
+    "table_evaluation": {
+        "flag": "--table-evaluation on derive/report",
+        "schema_version": "table.evaluation/1.0",
+        "authority_status": "self_attested",
+        "privacy": "field assessments and digests only; no character values",
+        "exit_codes": "0 checked_clean; 1 complete with advisories/findings; 2 refused",
+    },
 }
 
 
@@ -85,11 +93,24 @@ def main(argv=None):
     ap.add_argument("--brief", action="store_true", help="derive/report: chat-sized summary")
     ap.add_argument("--json", dest="json_out", action="store_true", help="doctor: machine-readable output")
     ap.add_argument("--schema", action="store_true", help="print the I/O contract and exit")
+    ap.add_argument("--table-evaluation", action="store_true",
+                    help="derive/report: emit a self-attested table.evaluation/1.0 envelope")
     a = ap.parse_args(argv)
 
     if a.schema:
         print(_json(SCHEMA))
         return 0
+
+    if a.table_evaluation and a.brief:
+        print(_json({
+            "ok": False,
+            "error": "bad_flag",
+            "message": "--brief and --table-evaluation are mutually exclusive.",
+            "action": "Drop --brief when requesting the shared JSON envelope.",
+            "retryable": False,
+            "exit_code": 2,
+        }), file=sys.stderr)
+        return 2
 
     flag_contract = (
         (a.brief, "--brief", {"derive", "report"},
@@ -102,6 +123,8 @@ def main(argv=None):
         (a.full, "--full", {"qa"}, "Use it only with qa."),
         (bool(a.baseline), "--baseline", {"diff"}, "Use it only with diff."),
         (a.json_out, "--json", {"doctor"}, "Use it only with doctor."),
+        (a.table_evaluation, "--table-evaluation", {"derive", "report"},
+         "Use it only with derive or report."),
         (a.pipe, "--pipe",
          {"derive", "stance", "qa", "report", "snapshot", "diff", "quiz",
           "seatpack", "intake"},
@@ -137,8 +160,13 @@ def main(argv=None):
       try:
           if a.command == "derive":
               r = derive(ref)
-              print(engine.render_brief(r) if a.brief else _json(r))
-              code = max(code, _exit_code(r))
+              if a.table_evaluation:
+                  out = project_table_evaluation(r)
+                  print(_json(out))
+                  code = max(code, out["exit_code"])
+              else:
+                  print(engine.render_brief(r) if a.brief else _json(r))
+                  code = max(code, _exit_code(r))
           elif a.command == "intake":
               print(_json(engine.intake(ref, for_dm=a.for_dm,
                                         include_persona=a.include_persona)))
@@ -167,6 +195,11 @@ def main(argv=None):
               print(_json(engine.quiz(ref)))
           elif a.command == "report":
               r = derive(ref)
+              if a.table_evaluation:
+                  out = project_table_evaluation(r)
+                  print(_json(out))
+                  code = max(code, out["exit_code"])
+                  continue
               if a.brief:
                   print(engine.render_report_brief(r))
                   code = max(code, _exit_code(r))
@@ -177,15 +210,25 @@ def main(argv=None):
       except errors.CharacterCheckError as e:
           # Structured, actionable, and on stdout so a piping agent
           # sees it. Never a traceback: see charactercheck/errors.py.
-          print(_json(e.as_dict()))
-          code = max(code, e.exit_code)
+          if a.table_evaluation:
+              out = project_table_error(e.as_dict(), input_digest(ref))
+              print(_json(out))
+              code = max(code, out["exit_code"])
+          else:
+              print(_json(e.as_dict()))
+              code = max(code, e.exit_code)
       except Exception as exc:  # noqa: BLE001 - redact at the process boundary
           correlation_id = secrets.token_hex(8)
           print(f"charactercheck internal_error correlation_id={correlation_id} "
                 f"exception={type(exc).__name__}", file=sys.stderr)
           e = errors.internal_error(correlation_id)
-          print(_json(e.as_dict()))
-          code = max(code, e.exit_code)
+          if a.table_evaluation:
+              out = project_table_error(e.as_dict(), input_digest(ref))
+              print(_json(out))
+              code = max(code, out["exit_code"])
+          else:
+              print(_json(e.as_dict()))
+              code = max(code, e.exit_code)
     return code
 
 

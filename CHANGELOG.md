@@ -2,6 +2,10 @@
 
 ## 0.7.0 - 2026-08-02
 
+- Add a deterministic, value-free `table.evaluation/1.0` projection for
+  `derive`/`report`. It preserves canonical field trust, treats mutable
+  player-authority state as an out-of-scope advisory, maps gaps and input
+  failures to typed refusals, and remains explicitly self-attested.
 - Pair every Coverage Inventory answer with its numbered 2024 character-sheet
   question, and include deduplicated sheet-specific lint questions in `quiz`
   without supplying answer keys for non-trusted mechanics.
