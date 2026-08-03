@@ -1,0 +1,71 @@
+name: publish-mcp
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact already-published PyPI version
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-mcp-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Validate package and publish MCP descriptor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate descriptor and public package identity
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+          import urllib.request
+
+          version = os.environ["VERSION"]
+          assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version)
+          server = json.loads(pathlib.Path("server.json").read_text())
+          package = server["packages"][0]
+          assert server["name"] == "io.github.chaoz23/charactercheck"
+          assert server["version"] == version
+          assert len(server["description"]) <= 100
+          assert package["identifier"] == "charactercheck"
+          assert package["version"] == version
+          assert package["runtimeArguments"][0]["value"] == f"charactercheck=={version}"
+          with urllib.request.urlopen(
+              f"https://pypi.org/pypi/charactercheck/{version}/json",
+              timeout=30,
+          ) as response:
+              metadata = json.load(response)
+          assert metadata["info"]["version"] == version
+          assert {item["packagetype"] for item in metadata["urls"]} == {
+              "bdist_wheel", "sdist",
+          }
+          PY
+      - name: Install checksum-pinned MCP publisher v1.8.0
+        run: |
+          curl --fail --location --silent --show-error \
+            --output mcp-publisher.tar.gz \
+            https://github.com/modelcontextprotocol/registry/releases/download/v1.8.0/mcp-publisher_linux_amd64.tar.gz
+          echo "1370446bbe74d562608e8005a6ccce02d146a661fbd78674e11cc70b9618d6cf  mcp-publisher.tar.gz" | sha256sum --check
+          tar -xzf mcp-publisher.tar.gz mcp-publisher
+      - name: Publish descriptor with GitHub OIDC
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

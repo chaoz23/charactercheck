@@ -268,6 +268,8 @@ class TestContractSurfacesAgree(unittest.TestCase):
 
         if os.path.exists(os.path.join(self.root, "server.json")):
             found = []
+            server = json.loads(self._read("server.json"))
+            self.assertLessEqual(len(server["description"]), 100)
 
             def walk(o):
                 if isinstance(o, dict):
@@ -279,7 +281,7 @@ class TestContractSurfacesAgree(unittest.TestCase):
                 elif isinstance(o, list):
                     for x in o:
                         walk(x)
-            walk(json.loads(self._read("server.json")))
+            walk(server)
             for i, v in enumerate(found):
                 seen[f"server.json[{i}]"] = v
 
