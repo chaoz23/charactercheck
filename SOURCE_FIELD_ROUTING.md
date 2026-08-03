@@ -1,6 +1,6 @@
 # D&D Beyond source-field routing
 
-> **Unreleased contract.** This registry is a conservative adapter boundary,
+> **0.7.0 contract.** This registry is a conservative adapter boundary,
 > not a claim that D&D Beyond exposes a supported public character API or that
 > CharacterCheck implements the complete sheet.
 

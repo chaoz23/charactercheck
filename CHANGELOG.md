@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0 (release candidate)
+## 0.7.0 - 2026-08-02
 
 - Pair every Coverage Inventory answer with its numbered 2024 character-sheet
   question, and include deduplicated sheet-specific lint questions in `quiz`
@@ -23,11 +23,6 @@
 - Preserve death-save activation versus latent counters, keep D&D Beyond's
   `isStabilized` flag separate from rules-implied three-success stability, and
   identify exhaustion only from D&D Beyond condition id 4.
-
-This section describes the 0.7.0 release candidate after the published 0.6.2
-artifact. Version metadata is prepared, but this heading is not a claim that
-PyPI or the MCP Registry contains 0.7.0; publication requires the documented
-artifact, install, tag, and public-package gates.
 
 - Reframed the product as experimental read-only character context for human
   and AI seats, with explicit authority and limitations.
@@ -96,11 +91,9 @@ artifact, install, tag, and public-package gates.
 
 ## 0.6.2
 
-Published historical release and current PyPI `latest` at the time this file
-was written. It predates every item in **Unreleased**, including strict input
+Historical release. It predates every item in **0.7.0**, including strict input
 validation, CharacterSnapshotV1, canonical field states, privacy-minimized
 defaults, and the hardened MCP contract. Use tag `v0.6.2` to reproduce it.
 
-Because PyPI artifacts are immutable, the unreleased source must never be
-published again as 0.6.2. Until a new release is explicitly authorized, treat
-the source checkout and `pip install charactercheck` as different contracts.
+Because PyPI artifacts are immutable, 0.7.0 must never be republished as
+0.6.2. Treat version pins as part of the input contract.

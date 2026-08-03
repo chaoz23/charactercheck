@@ -1,10 +1,8 @@
 # Security policy
 
-> **Unreleased contract.** The hardening below exists only in the post-0.6.2
-> source checkout. PyPI still exposes historical 0.6.2 behavior; active
-> historical MCP Registry entries have unpinned runtime arguments that can
-> resolve to it. Do not deploy that artifact expecting these controls; no newly
-> versioned remediation has been published.
+> **Release contract.** The hardening below applies to CharacterCheck 0.7.0.
+> Historical 0.6.x artifacts predate these controls; pin and verify 0.7.0 when
+> deploying them.
 
 CharacterCheck treats character payloads and character-authored text as hostile
 input. Inputs are parsed with strict reference grammar, bounded reads, duplicate

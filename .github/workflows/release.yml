@@ -1,0 +1,241 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact release version without a v prefix
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build exact tagged artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/v${{ inputs.version }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Verify annotated tag, exact main, and version identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          TAG="v${VERSION}"
+          test "$(git cat-file -t "refs/tags/${TAG}")" = tag
+          TAG_COMMIT="$(git rev-parse "refs/tags/${TAG}^{}")"
+          test "$TAG_COMMIT" = "$(git rev-parse HEAD)"
+          test "$TAG_COMMIT" = "$(git rev-parse origin/main)"
+          python - <<'PY'
+          import json
+          import pathlib
+          import re
+          import tomllib
+
+          root = pathlib.Path(".")
+          version = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
+          expected = __import__("os").environ["VERSION"]
+          assert version == expected, (version, expected)
+          assert __import__("charactercheck").__version__ == expected
+          assert json.loads((root / "tool.json").read_text())["version"] == expected
+          server = json.loads((root / "server.json").read_text())
+          assert server["version"] == expected
+          assert server["packages"][0]["version"] == expected
+          assert server["packages"][0]["runtimeArguments"][0]["value"] == f"charactercheck=={expected}"
+          stale = re.compile(r"release candidate|unreleased source|PyPI still exposes", re.I)
+          for name in ("README.md", "CHANGELOG.md", "AGENTS.md", "SECURITY.md", "PRIVACY.md", "SUPPORT.md", "MIGRATING.md", "llms.txt", "tool.json", "server.json"):
+              assert not stale.search((root / name).read_text()), name
+          PY
+      - name: Run offline suite
+        env:
+          HTTP_PROXY: http://127.0.0.1:9
+          HTTPS_PROXY: http://127.0.0.1:9
+          ALL_PROXY: http://127.0.0.1:9
+          NO_PROXY: ""
+        run: python -W error::ResourceWarning -m unittest discover -s tests -v
+      - name: Build distributions with pinned frontend
+        run: |
+          python -m pip install --disable-pip-version-check build==1.4.4
+          python -m build
+          test "$(find dist -maxdepth 1 -name '*.whl' | wc -l)" -eq 1
+          test "$(find dist -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 1
+          sha256sum dist/*.whl dist/*.tar.gz > dist/SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: charactercheck-release-${{ inputs.version }}
+          path: dist/
+          if-no-files-found: error
+
+  cold-test:
+    name: Cold artifacts (Python ${{ matrix.python-version }})
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.14"]
+    steps:
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: charactercheck-release-${{ inputs.version }}
+          path: dist
+      - name: Verify and exercise exact wheel outside the checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum --check dist/SHA256SUMS
+          python -m venv "${RUNNER_TEMP}/cold"
+          "${RUNNER_TEMP}/cold/bin/python" -m pip install --disable-pip-version-check --no-index --no-deps dist/*.whl
+          cd "${RUNNER_TEMP}"
+          test "$(cold/bin/python -c 'import charactercheck; print(charactercheck.__version__)')" = "${{ inputs.version }}"
+          cold/bin/charactercheck selftest
+          printf '%s\n%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"release","version":"1"}}}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+            | cold/bin/charactercheck-mcp > mcp.jsonl
+          grep -q '"name": "snapshot"' mcp.jsonl
+
+  attest:
+    name: Attest tagged artifacts
+    needs: [build, cold-test]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: charactercheck-release-${{ inputs.version }}
+          path: dist
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: "dist/charactercheck-*"
+
+  publish-pypi:
+    name: Publish exact artifacts to PyPI
+    needs: [build, cold-test, attest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/charactercheck/${{ inputs.version }}/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: charactercheck-release-${{ inputs.version }}
+          path: dist
+      - name: Limit upload set to wheel and source distribution
+        shell: bash
+        run: |
+          mkdir publish
+          cp dist/*.whl dist/*.tar.gz publish/
+          test "$(find publish -maxdepth 1 -type f | wc -l)" -eq 2
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          packages-dir: publish/
+          print-hash: true
+
+  public-smoke:
+    name: Public PyPI smoke (Python ${{ matrix.python-version }})
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.14"]
+    steps:
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Download and exercise the public package
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5 6; do
+            if python -m pip download --no-deps --only-binary=:all: --dest public "charactercheck==${VERSION}"; then
+              break
+            fi
+            test "$attempt" -lt 6
+            sleep 10
+          done
+          python -m pip download --no-deps --no-binary=:all: --dest public "charactercheck==${VERSION}"
+          test "$(find public -maxdepth 1 -name '*.whl' | wc -l)" -eq 1
+          test "$(find public -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 1
+          python -m venv "${RUNNER_TEMP}/public-cold"
+          "${RUNNER_TEMP}/public-cold/bin/python" -m pip install --disable-pip-version-check --no-index --no-deps public/*.whl
+          cd "${RUNNER_TEMP}"
+          test "$(public-cold/bin/python -c 'import charactercheck; print(charactercheck.__version__)')" = "$VERSION"
+          public-cold/bin/charactercheck selftest
+
+  publish-mcp:
+    name: Publish MCP Registry descriptor
+    needs: [publish-pypi, public-smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/v${{ inputs.version }}
+          persist-credentials: false
+      - name: Install checksum-pinned MCP publisher v1.8.0
+        shell: bash
+        run: |
+          curl --fail --location --silent --show-error \
+            --output mcp-publisher.tar.gz \
+            https://github.com/modelcontextprotocol/registry/releases/download/v1.8.0/mcp-publisher_linux_amd64.tar.gz
+          echo "1370446bbe74d562608e8005a6ccce02d146a661fbd78674e11cc70b9618d6cf  mcp-publisher.tar.gz" | sha256sum --check
+          tar -xzf mcp-publisher.tar.gz mcp-publisher
+      - name: Publish descriptor with GitHub OIDC
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
+
+  github-release:
+    name: Publish GitHub release
+    needs: [build, public-smoke, publish-mcp]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: charactercheck-release-${{ inputs.version }}
+          path: dist
+      - name: Create release with verified artifacts
+        run: >-
+          gh release create "v${VERSION}" dist/*
+          --repo "${GITHUB_REPOSITORY}"
+          --verify-tag
+          --title "CharacterCheck ${VERSION}"
+          --generate-notes

@@ -5,21 +5,16 @@ character-sheet fields. It turns a public share, saved character-service JSON,
 or versioned snapshot into deterministic mechanical context with provenance and
 named findings.
 
-> **0.7.0 release candidate.** This README describes the source tree prepared
-> for 0.7.0. Until publication is separately verified, PyPI serves the
-> historical 0.6.2 artifact, which
-> predates the strict input, privacy, snapshot, canonical field-state, and MCP
-> changes documented below. Source version text does not prove that the
-> release was published. The MCP Registry also still resolves to the
-> historical published package. No remediated package or registry entry has
-> been published.
+> **Current release: 0.7.0.** Pin `charactercheck==0.7.0` when installation
+> must be reproducible. Verify the installed package version and each field's
+> trust state; a version string alone is not proof that a value is supported.
 
 It is not a complete or rules-authoritative character validator. Its output is
 not encounter, world, or session state and does not prove that an action is
 legal. Unknown upstream fields and unsupported restrictions can affect results;
 read the trust and finding data before using a value.
 
-## Run the 0.7.0 release candidate offline
+## Run 0.7.0 offline
 
 Python 3.9 or newer is required. The runtime has no third-party dependencies.
 
@@ -34,23 +29,20 @@ The bundled example is project-authored synthetic data. The smoke test checks
 this checkout and selected derivations; it is not evidence of complete D&D
 rules correctness.
 
-If you need the installed console entry point for this checkout, install the
-checkout itself into a virtual environment:
+Install the published package into a virtual environment for the console entry
+points:
 
 ```console
 python3 -m venv .venv
-.venv/bin/python -m pip install -e .
+.venv/bin/python -m pip install charactercheck==0.7.0
 .venv/bin/charactercheck derive examples/sample-character.json --brief
 ```
 
-The direct `python3 -m charactercheck` path has no runtime dependency install.
-An editable pip install may bootstrap the `setuptools` build frontend if the
-environment does not already provide it.
-
-Until 0.7.0 publication is verified, `pip install charactercheck` installs the
-published 0.6.2 artifact. It does **not** install this release candidate; see
+The direct `python3 -m charactercheck` path from a clone has no runtime
+dependency install. An editable pip install may bootstrap the `setuptools`
+build frontend if the environment does not already provide it. See
 [MIGRATING.md](https://github.com/chaoz23/charactercheck/blob/main/MIGRATING.md)
-before comparing its output or MCP surface with this checkout.
+before comparing 0.7.0 output or MCP surfaces with 0.6.x.
 
 For an explicitly public character:
 
@@ -130,7 +122,7 @@ CharacterSnapshotV1 envelope may be up to 16 MiB so a maximum-size filtered
 source can round-trip with its metadata. JSON also has depth, node, string,
 collection, inventory, modifier, and container-traversal limits.
 
-## Unreleased source commands
+## Commands
 
 | Command | Current contract |
 |---|---|

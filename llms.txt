@@ -6,10 +6,9 @@ It is not complete character validation, encounter/world/session authority, or
 proof of action legality. It exposes no mutations.
 
 STATUS:
-  This is the unreleased post-0.6.2 source contract. PyPI still exposes
-  historical 0.6.2 behavior without these safeguards; active historical MCP
-  Registry entries have unpinned runtime arguments that can resolve to it. Run
-  the checkout directly until a newly versioned remediation is published.
+  This is the CharacterCheck 0.7.0 contract. Historical 0.6.x packages predate
+  these safeguards. Pin and verify 0.7.0, then inspect trust-bearing fields;
+  the version alone does not make a derived value supported.
 
 START OFFLINE:
   python3 -m charactercheck selftest

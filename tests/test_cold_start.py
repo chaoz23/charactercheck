@@ -286,6 +286,20 @@ class TestContractSurfacesAgree(unittest.TestCase):
         self.assertEqual(len(set(seen.values())), 1,
                          f"version disagreement across contract surfaces: {seen}")
 
+    def test_release_surfaces_do_not_claim_0_7_0_is_unreleased(self):
+        import re
+
+        stale = re.compile(
+            r"release candidate|unreleased source|PyPI still exposes",
+            re.I,
+        )
+        for name in (
+            "README.md", "CHANGELOG.md", "AGENTS.md", "SECURITY.md",
+            "PRIVACY.md", "SUPPORT.md", "MIGRATING.md", "llms.txt",
+            "tool.json", "server.json",
+        ):
+            self.assertIsNone(stale.search(self._read(name)), name)
+
     def test_schema_documents_exit_3_and_the_error_kinds(self):
         buf = io.StringIO()
         with redirect_stdout(buf):

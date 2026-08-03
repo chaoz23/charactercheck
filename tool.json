@@ -1,15 +1,15 @@
 {
   "name": "charactercheck",
   "version": "0.7.0",
-  "status": "0.7.0-release-candidate",
+  "status": "released",
   "distribution": {
-    "source": "This manifest describes the 0.7.0 release candidate checkout.",
-    "published": "Do not infer publication from source metadata; verify the signed/tagged artifact and PyPI separately.",
-    "version_warning": "0.7.0 is a release candidate until the release gates, tag, and public-package verification pass."
+    "source": "This manifest describes CharacterCheck 0.7.0.",
+    "published": "Pin charactercheck==0.7.0 and verify the public artifact and trust-bearing output.",
+    "version_warning": "Source metadata is not artifact provenance; verify the installed version and distribution attestations."
   },
   "description": "Read-only compilation of selected D&D Beyond character fields into mechanical context, canonical assessments, provenance, findings, and versioned snapshots.",
   "boundary": "Not complete rules validation, encounter/world/session state, role enforcement, or proof of action legality. No mutations are exposed.",
-  "install": "Before 0.7.0 publication, run the checkout with python3 -m charactercheck; after publication, pin charactercheck==0.7.0",
+  "install": "Pin charactercheck==0.7.0; from a trusted clone, python3 -m charactercheck runs without runtime dependencies",
   "example": "python3 -m charactercheck derive examples/sample-character.json --brief",
   "commands": {
     "charactercheck derive <ref> [--brief]": "selected derivation plus canonical fields, findings, trust, and observation metadata",
