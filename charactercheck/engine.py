@@ -57,13 +57,7 @@ BLAST_MAP = {
     "proficiency:calligraphers-supplies": (["skills"], "tool proficiency"),
     "set-base:darkvision": (["senses"], "darkvision distance"),
     "set:innate-speed-walking": (["speeds"], "walking speed"),
-    "set:subclass": ([
-        "abilities", "ac", "initiative", "hp", "saves", "skills",
-        "attacks", "weapons", "speeds", "senses", "defenses",
-        "languages", "proficiency_bonus", "spellcasting", "spell_save_dc",
-        "spell_attack_bonus", "spell_output", "spell_slots",
-        "prepared_spells", "resources",
-    ], "subclass selection can affect the static class build"),
+    "set:subclass": ([], "structural subclass-selection marker"),
 }
 MAXIMAL = ["unknown — treat all derived values as unverified"]
 
@@ -432,7 +426,9 @@ def build(d, *, _privacy_filtered=False):
     for m in mods:
         st = (m.get("subType") or "").lower()
         if m.get("type") == "bonus" and st in SKILLS:
-            skill_bonus[st] = skill_bonus.get(st, 0) + (m.get("value") or 0)
+            value = m.get("value")
+            bonus = value if type(value) is int else am[ABIL[m["statId"]]]
+            skill_bonus[st] = skill_bonus.get(st, 0) + bonus
     cv_skill_bon, cv_skill_prof, cv_skill_abil = {}, {}, {}
     for c in cv:
         try:
@@ -461,6 +457,47 @@ def build(d, *, _privacy_filtered=False):
         return b, "none"
 
     W.update(profs=profs, expertise=expertise, halfprof=halfprof, skill=skill)
+
+    # ---- directly encoded movement/defense/conditional modifier facts.
+    # These are source observations, not encounter adjudication. Closed codes
+    # keep upstream prose outside agent/snapshot outputs.
+    normal_speeds = copy.deepcopy(
+        (((d.get("race") or {}).get("weightSpeeds") or {}).get("normal") or {}))
+    W["speeds"] = {
+        key: value for key, value in normal_speeds.items()
+        if key in ("walk", "fly", "swim", "climb", "burrow")
+        and type(value) is int and value >= 0
+    }
+    W["save_advantages"] = []
+    W["defenses"] = {"immunities": []}
+    W["spell_output_modifiers"] = []
+    for modifier in mods:
+        handler_id = modifier.get("_handler_id")
+        provenance = {
+            "handler_id": handler_id,
+            "source_bucket": modifier.get("_source_bucket"),
+            "component_id": modifier.get("componentId"),
+        }
+        if handler_id == "speed.walking.base":
+            W["speeds"]["walk"] = modifier["value"]
+        elif handler_id == "save.advantage.charmed":
+            W["save_advantages"].append({
+                "condition": "charmed",
+                "timing": "avoid_or_end",
+                "scope": "all_saving_throws",
+                "provenance": provenance,
+            })
+        elif handler_id == "defense.magical-sleep":
+            W["defenses"]["immunities"].append({
+                "effect": "magical_sleep",
+                "provenance": provenance,
+            })
+        elif handler_id == "spell.healing.bonus":
+            W["spell_output_modifiers"].append({
+                "spell_group": "healing",
+                "bonus": modifier["value"],
+                "provenance": provenance,
+            })
 
     # ---- initiative
     init_bonus = sum(m.get("value") or 0 for m in mods
@@ -607,7 +644,10 @@ def build(d, *, _privacy_filtered=False):
             "attack_provenance": f"{why} {use:+d} + PB {pb}",
             "damage": f"{dice}{use:+d}",
             "damage_type": de.get("damageType"),
-            "properties": sorted(props), "mastery": sorted(ms),
+            # A mastery property printed on a weapon is not evidence that this
+            # character learned that mastery. Keep the observed property in
+            # ``properties``/``mastery_properties_on_weapons`` only.
+            "properties": sorted(props), "mastery": [],
             "offhand_label": bool(re.search(r"off.?hand", cname.get(str(it["id"]), ""), re.I)),
             "two_handed": "Two-Handed" in props, "light": "Light" in props,
             "loading": "Loading" in props})
@@ -1065,11 +1105,18 @@ def canonical_fields(report):
         add(f"saves.{ability}.bonus", values.get("bonus"), "saves")
         add(f"saves.{ability}.proficient", values.get("proficient"), "saves",
             authority="source")
+    add("saves.conditional_advantages",
+        ((report.get("save_modifiers") or {}).get("conditional_advantages")),
+        "saves", authority="source")
     for skill, values in (report.get("skills") or {}).items():
         add(f"skills.{skill}.bonus", values.get("bonus"), "skills")
         add(f"skills.{skill}.proficiency", values.get("proficiency"), "skills")
     add("senses.vision", ((report.get("senses") or {}).get("vision")),
         "senses", authority="source")
+    add("movement.speeds", report.get("speeds"), "speeds",
+        authority="source")
+    add("defenses", report.get("defenses"), "defenses",
+        authority="source")
 
     combat = report.get("combat") or {}
     ac = combat.get("ac") or {}
@@ -1098,6 +1145,7 @@ def canonical_fields(report):
             "spellcasting.ability": "spellcasting",
             "spellcasting.save_dc": "spell_save_dc",
             "spellcasting.attack_bonus": "spell_attack_bonus",
+            "spellcasting.output_modifiers": "spell_output",
             "spellcasting.prepared": "prepared_spells",
             "spellcasting.slots.maximum": "spell_slots",
             "spellcasting.slots.current": "spell_slots",
@@ -1115,6 +1163,8 @@ def canonical_fields(report):
         add("spellcasting.attack_bonus", spell.get("attack_bonus"),
             "spell_attack_bonus", formula=spell.get("provenance"))
         add("spellcasting.prepared", spell.get("prepared"), "prepared_spells")
+        add("spellcasting.output_modifiers", spell.get("output_modifiers"),
+            "spell_output", authority="source")
         add("spellcasting.slots.maximum", spell.get("slots_max"), "spell_slots")
         slot_state, slot_findings = _family_assessment(trust, "spell_slots")
         if slot_state == "trusted":
@@ -1242,7 +1292,10 @@ def derive_data(d, *, meta=None, source_coverage=None):
                                ("wis", "wisdom"), ("cha", "charisma")]},
         "skills": {n: {"bonus": W["skill"](n)[0], "proficiency": W["skill"](n)[1]}
                    for n in sorted(SKILLS)},
+        "save_modifiers": {"conditional_advantages": W["save_advantages"]},
+        "speeds": W["speeds"],
         "senses": {"vision": vision(d)},
+        "defenses": W["defenses"],
         "combat": {
             "ac": {"value": W["ac"], "provenance": W["ac_prov"]},
             "initiative": {"bonus": W["init"], "provenance": W["init_prov"]},
@@ -1259,6 +1312,7 @@ def derive_data(d, *, meta=None, source_coverage=None):
                           "provenance": W["spell"]["provenance"],
                           "cantrips": W["cantrips"], "prepared": W["prepared"],
                           "spell_profiles": W["spell_profiles"],
+                          "output_modifiers": W["spell_output_modifiers"],
                           "slots_max": W["slots"], "slots_current": W["slots_cur"]}
                         if W["spell"] else None),
         "resources": W["resources"],
@@ -1951,7 +2005,8 @@ def vision(d):
     # never an independent feature-recognition path.
     # as arithmetic. Raw modifiers are never a second recognition path.
     for modifier in registry.classify_modifiers(d)["applied"]:
-        if modifier.get("_handler_id") == "sense.darkvision":
+        if modifier.get("_handler_id") in (
+                "sense.darkvision", "sense.darkvision.base"):
             out.append({"feature": "Darkvision",
                         "range_ft": modifier.get("value"),
                         "provenance": f"modifier ({modifier.get('_source_bucket')})"})
@@ -1978,6 +2033,10 @@ def seatpack_data(d, r, *, for_dm=False, include_persona=False):
         "saves": r.get("saves"),
         "skills": sk,
         "passives": passives,
+        "save_modifiers": r.get("save_modifiers"),
+        "speeds": r.get("speeds"),
+        "senses": r.get("senses"),
+        "defenses": r.get("defenses"),
         "combat": r.get("combat"),
         "spellcasting": r.get("spellcasting"),
         "resources": r.get("resources"),

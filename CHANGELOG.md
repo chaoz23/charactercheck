@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Convert a second round of reversible live D&D Beyond observations into
+  fail-closed handlers for base darkvision and walking speed, magical-sleep
+  immunity, Charmed-save advantage, spell-group healing bonuses, structural
+  subclass markers, and selected-option ability-based skill bonuses.
+- Preserve only the mechanical join for explicitly selected option definitions;
+  inactive builder catalogs and presentation metadata remain trust-neutral,
+  while novel selected-option mechanics retain scoped or global uncertainty.
+- Prevent individual weapon records from repeating a printed Sap/Push/etc.
+  property as though it were a learned character mastery.
+- Add a privacy-gated A → B → A human differential protocol and a proposed
+  cross-character corpus for gathering reproducible schema evidence without
+  treating one character or one UI observation as a universal rule.
+
 ## 0.7.0 - 2026-08-02
 
 - Add a deterministic, value-free `table.evaluation/1.0` projection for

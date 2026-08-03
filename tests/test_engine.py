@@ -59,6 +59,10 @@ class TestTorvald(unittest.TestCase):
         self.assertEqual(self.r["combat"]["masteries_known"], [])
         self.assertIn(
             "Sap", self.r["combat"]["mastery_properties_on_weapons"])
+        mace = next(row for row in self.r["combat"]["weapons"]
+                    if row["base_name"] == "Mace")
+        self.assertIn("Sap", mace["properties"])
+        self.assertEqual(mace["mastery"], [])
 
 
 class TestValidatedDDBDifferentials(unittest.TestCase):

@@ -62,7 +62,7 @@ jobs:
             llms.txt server.json tool.json \
             charactercheck/source.py charactercheck/registry.py \
             charactercheck/ddb_registry.py charactercheck/ddb-config-registry.json \
-            ECOSYSTEM_CONFORMANCE.md \
+            ECOSYSTEM_CONFORMANCE.md docs/human-differential-testing.md \
             tests/test_input_contract.py tests/test_snapshot.py tests/fixtures-manifest.json
           do
             grep -Eq "/${required}$" /tmp/charactercheck-sdist-files.txt || {

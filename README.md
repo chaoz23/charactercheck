@@ -229,6 +229,8 @@ the relationship as `indeterminate`; an exact identical snapshot can still be
 persona/non-mechanical delta are `mechanically_unchanged`, not `unchanged`. A
 changed mechanical revision that reaches no classifier also falls back to `$`.
 Diff reports candidates or uncertainty only and never applies a change.
+For controlled D&D Beyond UI research, use the privacy and reversal gates in
+[the A → B → A human differential protocol](docs/human-differential-testing.md).
 
 ## Trust and canonical field semantics
 
@@ -270,6 +272,10 @@ than treating an aggregate state as proof of completeness. See
   recovers selected skills, languages, and standard tools even when D&D Beyond
   leaves the modifier's `isGranted` flag false. Builder labels and unselected
   option catalogs are not retained.
+- Reviewed direct facts now include species walking speed and darkvision,
+  magical-sleep immunity, the closed Charmed-save condition, and numeric
+  spell-group healing bonuses. They retain handler/source provenance and stay
+  non-trusted whenever separate omitted source mechanics reach their family.
 - Armor and shield AC requires `equipped: true`. `combat.weapons` remains an
   inventory view; `combat.active_attacks` is the action-facing view and
   includes the 2024 Unarmed Strike. A weapon mastery property is reported
