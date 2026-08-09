@@ -2,6 +2,8 @@
 
 **Deterministic D&D Beyond character-sheet derivation with provenance — every stat computed and traceable, every unhandled case named, never guessed.**
 
+**Agents start here → [SKILL.md](SKILL.md)** — when to call this, worked examples, MUST/MUST NOTs. Family contract: [FAMILY.md](https://github.com/chaoz23/srdcheck/blob/main/FAMILY.md).
+
 The D&D Beyond API returns *build data* — there is no computed AC, attack bonus, or save anywhere in the payload. Everyone who consumes it re-derives the math, usually inside a host app (a VTT module, a browser extension) or, worse, by letting a language model guess. charactercheck is that derivation as a **standalone, dependency-free library and CLI**: the character accountant for agents.
 
 > **Cold-boot probe (2026-07-24):** a fresh agent session given only this repo URL derived a live character correctly in **2 commands, zero failures** (install → derive), ~seconds end-to-end.
