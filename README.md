@@ -1,5 +1,7 @@
 # CharacterCheck
 
+**Agents start here → [SKILL.md](SKILL.md)** — when to call this, worked examples, MUST/MUST NOTs. Family contract: [FAMILY.md](https://github.com/chaoz23/srdcheck/blob/main/FAMILY.md).
+
 CharacterCheck is an experimental, read-only compiler for selected D&D Beyond
 character-sheet fields. It turns a public share, saved character-service JSON,
 or versioned snapshot into deterministic mechanical context with provenance and
