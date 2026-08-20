@@ -1,5 +1,6 @@
 {
   "name": "charactercheck",
+  "family_class": "verdict",
   "version": "0.7.0",
   "status": "released",
   "distribution": {
