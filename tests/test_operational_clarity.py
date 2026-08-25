@@ -242,7 +242,7 @@ class TestSecondRoundUXR(unittest.TestCase):
         buf, err = io.StringIO(), io.StringIO()
         with redirect_stdout(buf), redirect_stderr(err):
             code = main(["stance", TORVALD, "--brief"])
-        self.assertEqual(code, 2)
+        self.assertEqual(code, 3)   # usage error, not the honest lane (FAMILY.md v2.2)
 
     def test_for_dm_on_derive_is_refused_not_silently_ignored(self):
         """A caller requesting DM redaction must never receive the ordinary
@@ -252,7 +252,7 @@ class TestSecondRoundUXR(unittest.TestCase):
                 mock.patch("charactercheck.cli.derive",
                            side_effect=AssertionError("must reject before derive")):
             code = main(["derive", TORVALD, "--for-dm"])
-        self.assertEqual(code, 2)
+        self.assertEqual(code, 3)   # usage error, not the honest lane (FAMILY.md v2.2)
         self.assertEqual(stdout.getvalue(), "")
         payload = json.loads(stderr.getvalue())
         self.assertEqual(payload["error"], "bad_flag")
@@ -270,7 +270,7 @@ class TestSecondRoundUXR(unittest.TestCase):
             with self.subTest(flag=flag), redirect_stdout(stdout), \
                     redirect_stderr(stderr):
                 code = main(argv)
-            self.assertEqual(code, 2)
+            self.assertEqual(code, 3)   # usage error, not the honest lane (FAMILY.md v2.2)
             self.assertEqual(json.loads(stderr.getvalue())["error"],
                              "bad_flag")
 

@@ -13,8 +13,14 @@ a private character as a dirty one and carry on confidently. That is worse than
 crashing: it is a wrong answer wearing the uniform of a right one.
 
 So every failure here is typed, carries a one-sentence **action**, and exits
-**3** — a lane of its own, distinct from lint (1) and unhandled content (2),
+**4** — a lane of its own, distinct from lint (1) and unhandled content (2),
 both of which still mean "you have usable output".
+
+It exited 3 until FAMILY.md v2.2, which harmonises `3` = usage error across
+every family member: a malformed call is the one non-verdict outcome every
+tool has, so an agent that mis-invokes any of them should get the same answer.
+Retrieval failure moved up to 4 rather than usage errors taking a code no
+sibling uses. See chaoz23/charactercheck#18.
 
 The other rule this module encodes: **no credentials, ever.** A private sheet
 is not a problem to solve with cookies, it is a problem to solve with one
@@ -22,8 +28,13 @@ sentence telling the caller how to make it readable. That boundary keeps the
 security surface at zero and keeps the support surface small.
 """
 
-#: Failure exits with its own code. 0/1/2 keep their published meanings.
-EXIT_FETCH = 3
+#: 0/1/2 keep their published meanings: pass, lint findings, unhandled content
+#: (the honest lane). 3 and above are the no-verdict taxonomy, per FAMILY.md
+#: v2.2 clause 1.
+#: A malformed call. Harmonised at 3 across the whole family.
+EXIT_USAGE = 3
+#: Retrieval failed — the sheet could not be read at all.
+EXIT_FETCH = 4
 
 # Stable error names exposed by the CLI/tool boundary. JSON-RPC protocol
 # errors use their standard numeric codes and are intentionally separate.

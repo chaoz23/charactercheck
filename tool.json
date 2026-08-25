@@ -1,16 +1,16 @@
 {
   "name": "charactercheck",
   "family_class": "verdict",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "status": "released",
   "distribution": {
-    "source": "This manifest describes CharacterCheck 0.7.0.",
-    "published": "Pin charactercheck==0.7.0 and verify the public artifact and trust-bearing output.",
+    "source": "This manifest describes CharacterCheck 0.8.0.",
+    "published": "Pin charactercheck==0.8.0 and verify the public artifact and trust-bearing output.",
     "version_warning": "Source metadata is not artifact provenance; verify the installed version and distribution attestations."
   },
   "description": "Read-only compilation of selected D&D Beyond character fields into mechanical context, canonical assessments, provenance, findings, and versioned snapshots.",
   "boundary": "Not complete rules validation, encounter/world/session state, role enforcement, or proof of action legality. No mutations are exposed.",
-  "install": "Pin charactercheck==0.7.0; from a trusted clone, python3 -m charactercheck runs without runtime dependencies",
+  "install": "Pin charactercheck==0.8.0; from a trusted clone, python3 -m charactercheck runs without runtime dependencies",
   "example": "python3 -m charactercheck derive examples/sample-character.json --brief",
   "commands": {
     "charactercheck derive <ref> [--brief]": "selected derivation plus canonical fields, findings, trust, and observation metadata",
@@ -37,18 +37,19 @@
     "limits": "Raw local/remote character payloads: 8 MiB. Local CharacterSnapshotV1 envelopes: 16 MiB. MCP request lines: 8 MiB. All JSON also has bounded depth, nodes, strings, collections, inventory, modifiers, and container traversal."
   },
   "exit_codes": {
-    "0": "command-specific success; successful projections can still contain non-trusted fields",
+    "0": "command succeeded with no command-specific finding/change status",
     "1": "derive/report lint-only, diff named change or indeterminate comparison, or selftest failure",
-    "2": "derive/report has an unhandled record, or an explicit compatibility flag guard failed; argparse usage errors also use 2",
-    "3": "structured retrieval/input/snapshot/internal failure, or a failed doctor check"
+    "2": "unsupported content is present; inspect field states before use",
+    "3": "usage error: the call itself was malformed. Fix the call and retry; never route this to a human. Family-wide code, FAMILY.md v2.2",
+    "4": "input, retrieval, validation, or internal failure; read the action field"
   },
   "command_exit_contracts": {
-    "derive/report": "0 no lint/unhandled; 1 lint with no unhandled; 2 one or more unhandled records; 3 structured failure",
-    "diff": "0 complete comparison with no detected change; 1 any named change or indeterminate omitted-source/restriction comparison; 3 structured failure",
-    "stance/qa/snapshot/quiz/seatpack/intake": "0 when emitted even if fields/findings require attention; 3 structured failure",
+    "derive/report": "0 no lint/unhandled; 1 lint with no unhandled; 2 one or more unhandled records; 4 structured failure",
+    "diff": "0 complete comparison with no detected change; 1 any named change or indeterminate omitted-source/restriction comparison; 4 structured failure",
+    "stance/qa/snapshot/quiz/seatpack/intake": "0 when emitted even if fields/findings require attention; 4 structured failure",
     "selftest": "0 pass; 1 fail",
-    "doctor": "0 all checks pass; 3 otherwise",
-    "usage": "argparse errors are plain text and exit 2; unsupported command-specific flag combinations are structured and exit 2"
+    "doctor": "0 all checks pass; 4 otherwise",
+    "usage": "argparse errors are plain text and exit 3; unsupported command-specific flag combinations are structured and exit 3"
   },
   "privacy": {
     "default": "mechanical; account identifiers, linked images, appearance, notes, and persona omitted",
