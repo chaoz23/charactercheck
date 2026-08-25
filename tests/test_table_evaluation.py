@@ -100,6 +100,8 @@ class TestTableEvaluationProjection(unittest.TestCase):
         with redirect_stdout(output):
             code = main(["derive", FIXTURE, "--table-evaluation"])
         result = json.loads(output.getvalue())
+        # Stays 2: a valid call whose subject has unsupported content is the
+        # honest lane, not a malformed call.
         self.assertEqual(code, 2)
         self.assertEqual(result["status"], "unsupported")
 
@@ -107,7 +109,7 @@ class TestTableEvaluationProjection(unittest.TestCase):
         output = io.StringIO()
         with redirect_stderr(output):
             code = main(["derive", FIXTURE, "--brief", "--table-evaluation"])
-        self.assertEqual(code, 2)
+        self.assertEqual(code, 3)   # usage error, not the honest lane (FAMILY.md v2.2)
         self.assertEqual(json.loads(output.getvalue())["error"], "bad_flag")
 
 

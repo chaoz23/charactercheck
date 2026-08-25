@@ -1,8 +1,8 @@
 # Privacy
 
-> **Release contract.** These protections apply to CharacterCheck 0.7.0.
+> **Release contract.** These protections apply to CharacterCheck 0.8.0.
 > Historical 0.6.x artifacts do not implement this privacy contract; pin and
-> verify 0.7.0 when relying on it.
+> verify 0.8.0 when relying on it.
 
 CharacterCheck is currently local, read-only software. This repository does not
 operate a hosted service, retain server-side character data, or ship telemetry.

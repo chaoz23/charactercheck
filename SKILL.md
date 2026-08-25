@@ -1,6 +1,6 @@
 ---
 name: charactercheck
-version: 0.7.0
+version: 0.8.0
 description: >
   Deterministic D&D Beyond character-sheet derivation with per-stat
   provenance. Use it whenever you need a character's real numbers: "what's
@@ -27,7 +27,7 @@ to trust and which items a human must resolve.
    derived stats are complete; the named `unhandled[]` items are your list of
    things to ask the player about. Don't retry, don't guess, don't discard.
 3. **Every failure prints JSON with an `action` field — do what it says.**
-   Never a traceback; exit 3 means the sheet couldn't be retrieved at all.
+   Never a traceback; exit 4 means the sheet couldn't be retrieved at all.
 
 ## Exit codes ARE the verdict (per-verb since 0.7.0)
 
@@ -38,12 +38,18 @@ For `derive`/`report`:
 | 0 | no lint, nothing unhandled | use the output |
 | 1 | lint findings — sheet disagrees with itself | usable; resolve `lint[]` with the player |
 | 2 | unhandled/unsupported content present (the honest lane) | trusted fields usable; resolve named items with a human |
-| 3 | retrieval/validation/internal failure | read `action` (and `retryable`) in the JSON and follow it |
+| 3 | usage error — you called it wrong | fix the call and retry; never route this to a human |
+| 4 | retrieval/validation/internal failure | read `action` (and `retryable`) in the JSON and follow it |
 
 Projection verbs (`qa`, `seatpack`, `intake`, `snapshot`, `stance`, `quiz`)
 exit 0 when the projection is emitted — **inspect the embedded findings; an
 exit 0 there is not a cleanliness claim.** `diff`: 0 no change · 1 any named
-change · 3 failure.
+change · 4 failure.
+
+**3 is the family-wide usage code** (FAMILY.md v2.2): every check-family tool
+exits 3 when the call itself is malformed, so an agent that mis-invokes any of
+them gets the same answer. It moved here in 0.8.0 — retrieval failure, which
+was 3 through 0.7.x, is now **4**.
 
 ## Invocation
 
@@ -78,7 +84,7 @@ Torvald Brightmantle — Cleric 3
 **Exit 2 — and that's the honest lane working:** every `trusted:` field is
 derived and safe to use; the named `UNSUPPORTED` lanes (here: weapon-
 proficiency semantics) go to a human. `(confirm)` marks a value the sheet
-asserts but the derivation wants confirmed. A private sheet returns exit 3
+asserts but the derivation wants confirmed. A private sheet returns exit 4
 with `"action": "Open the character on D&D Beyond, set Character Privacy to
 Public, and retry [...]"` and `"retryable": false` — relay the action
 verbatim; the tool never asks for credentials.
@@ -123,6 +129,8 @@ Family contract: [FAMILY.md](https://github.com/chaoz23/srdcheck/blob/main/FAMIL
   persona output (no longer default); failure JSON adds `retryable`;
   unsupported item-semantic lanes are named per field. If you remember
   0.6.x's single exit table or persona-by-default seatpacks, that's stale.
+- **0.8.0:** usage errors moved to exit 3 (family-wide, FAMILY.md v2.2); retrieval
+  failure moved 3 -> 4. Anything handling exit 3 as a retrieval failure must move.
 - **0.5.1:** exit 3 + `action` field + `doctor` — retrieval failures are
   structured, never tracebacks.
 - The sheet source is the DDB character service; a saved JSON file works

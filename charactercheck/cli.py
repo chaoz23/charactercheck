@@ -33,22 +33,25 @@ SCHEMA = {
         "1": ("derive/report lint-only, diff named change or indeterminate "
               "comparison, or selftest failure"),
         "2": "unsupported content is present; inspect field states before use",
-        "3": "input, retrieval, validation, or internal failure; read the action field",
+        "3": ("usage error: the call itself was malformed. Fix the call and "
+              "retry; never route this to a human. Family-wide code, FAMILY.md "
+              "v2.2"),
+        "4": "input, retrieval, validation, or internal failure; read the action field",
     },
     "command_exit_contracts": {
         "derive/report": ("0 no lint/unhandled; 1 lint with no unhandled; "
-                          "2 one or more unhandled records; 3 structured failure"),
+                          "2 one or more unhandled records; 4 structured failure"),
         "diff": ("0 complete comparison with no detected change; 1 any named "
                  "change or indeterminate omitted-source/restriction comparison; "
-                 "3 structured failure"),
+                 "4 structured failure"),
         "stance/qa/snapshot/quiz/seatpack/intake": (
             "0 when emitted even if fields/findings require attention; "
-            "3 structured failure"),
+            "4 structured failure"),
         "selftest": "0 pass; 1 fail",
-        "doctor": "0 all checks pass; 3 otherwise",
-        "usage": ("argparse errors are plain text and exit 2; unsupported "
+        "doctor": "0 all checks pass; 4 otherwise",
+        "usage": ("argparse errors are plain text and exit 3; unsupported "
                   "command-specific flag combinations are "
-                  "structured and exit 2"),
+                  "structured and exit 3"),
     },
     "errors": {
         "note": ("Known failures use stable structured errors. Unexpected failures "
@@ -66,6 +69,17 @@ SCHEMA = {
 }
 
 
+class _UsageExitsThree(argparse.ArgumentParser):
+    """argparse hardcodes exit 2 in error(); FAMILY.md clause 1 reserves 2 for
+    the honest lane. A malformed call is the opposite of a cannot-adjudicate
+    verdict -- the caller fixes it and retries -- so it exits 3, harmonised
+    across the family. See #18."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(errors.EXIT_USAGE, f"{self.prog}: error: {message}\n")
+
+
 def _exit_code(result):
     if result.get("unhandled", {}).get("items"):
         return 2
@@ -78,7 +92,7 @@ from . import __version__
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="charactercheck", description=__doc__)
+    ap = _UsageExitsThree(prog="charactercheck", description=__doc__)
     ap.add_argument("command", nargs="?",
                     choices=["derive", "stance", "qa", "report", "snapshot", "diff", "quiz", "seatpack", "intake", "doctor", "selftest"], default="derive")
     ap.add_argument("ref", nargs="?", help="DDB character URL / id / JSON file")
@@ -108,9 +122,9 @@ def main(argv=None):
             "message": "--brief and --table-evaluation are mutually exclusive.",
             "action": "Drop --brief when requesting the shared JSON envelope.",
             "retryable": False,
-            "exit_code": 2,
+            "exit_code": errors.EXIT_USAGE,
         }), file=sys.stderr)
-        return 2
+        return errors.EXIT_USAGE
 
     flag_contract = (
         (a.brief, "--brief", {"derive", "report"},
@@ -138,9 +152,9 @@ def main(argv=None):
                 "message": f"{flag} is not supported by '{a.command}'.",
                 "action": action,
                 "retryable": False,
-                "exit_code": 2,
+                "exit_code": errors.EXIT_USAGE,
             }), file=sys.stderr)
-            return 2
+            return errors.EXIT_USAGE
 
     if a.command == "selftest":
         ok, lines = errors.selftest()
